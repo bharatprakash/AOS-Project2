@@ -1,29 +1,37 @@
 -module(node).
--export([start/1, start/2, new_node/1, new_node/2]).
+-export([join/0, join/1, new_node/0, new_node/1, listen/1]).
 
-listen() ->
-	 receive
-		{PID, Message} ->
-		      io:format("~p from ~p~n",[Message, PID]),
-		      PID ! accepted,
-		      listen();
-		accepted ->
-			 io:format("My request accepted~n"),
-			 listen()
+listen(Neighbor_List) ->
+	io:format("My neighbor list ~p~n", [Neighbor_List]),
+	receive
+		{From, JoinRequest} ->
+		       New_Neighbor_List = [From | Neighbor_List],
+		       io:format("~p from ~p~n",[JoinRequest, From]),
+		       From ! {self(), accepted, Neighbor_List},
+		       listen(New_Neighbor_List);
+		{From, accepted, Returned_Neighbor_List} ->
+		       io:format("My request accepted by ~p with ~p~n", [From, Returned_Neighbor_List]),
+		       New_Neighbor_List = [From | Returned_Neighbor_List],
+		       Sender = lists:nth(1, New_Neighbor_List),
+		       Sender ! thanks,
+		       listen(New_Neighbor_List);
+		thanks ->
+		       io:format("He said thanks~n"),
+		       listen(Neighbor_List)
 	end.
 
-new_node(Name) ->
-	io:format("New node of name : ~p~n", [Name]),
-	listen().
+new_node() ->
+	io:format("New node~n", []),
+	listen([]).
 
-new_node(Name, JoinTo) ->
-	io:format("New node of name : ~p~n", [Name]),
-	io:format("Wants to join : ~p~n", [JoinTo]),
-	{node,JoinTo} ! {self(),"I want to join you"},
-	listen().
+new_node(JoinTo) ->
+	io:format("New node~n", []),
+	io:format("Want to join : ~p~n", [JoinTo]),
+	{node, JoinTo} ! {self(),"I want to join you"},
+	listen([]).
 
-start(Name) ->
-	register(node, spawn(node, new_node,[Name])).
+join() ->
+	register(node, spawn(node, new_node,[])).
 
-start(Name, JoinTo) ->
-	register(node, spawn(node, new_node,[Name, JoinTo])).
+join(JoinTo) ->
+	register(node, spawn(node, new_node,[JoinTo])).
