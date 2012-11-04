@@ -7,13 +7,13 @@ listen(Neighbor_List) ->
 		{From, JoinRequest} ->
 		       New_Neighbor_List = [From | Neighbor_List],
 		       io:format("~p from ~p~n",[JoinRequest, From]),
-		       From ! {self(), accepted, Neighbor_List},
+		       {node, From} ! {node(), accepted, Neighbor_List},
 		       listen(New_Neighbor_List);
 		{From, accepted, Returned_Neighbor_List} ->
 		       io:format("My request accepted by ~p with ~p~n", [From, Returned_Neighbor_List]),
 		       New_Neighbor_List = [From | Returned_Neighbor_List],
 		       Sender = lists:nth(1, New_Neighbor_List),
-		       Sender ! thanks,
+		       {node, Sender} ! thanks,
 		       listen(New_Neighbor_List);
 		thanks ->
 		       io:format("He said thanks~n"),
@@ -27,7 +27,7 @@ new_node() ->
 new_node(JoinTo) ->
 	io:format("New node~n", []),
 	io:format("Want to join : ~p~n", [JoinTo]),
-	{node, JoinTo} ! {self(),"I want to join you"},
+	{node, JoinTo} ! {node(), "I want to join you"},
 	listen([]).
 
 join() ->
