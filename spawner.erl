@@ -1,3 +1,4 @@
+
 -module(spawner).
 
 -export([start/0 , process/2 , findMax/0 , calculateMax/0 , find_min/0 , find_avg/0]).
@@ -35,7 +36,7 @@ update(NeighborSecret) ->
 	{_ , HisValue} = HisSecret,
 	
 	if
-		MySecret == (undefined) ->
+		length(MySecret) == (0) ->
 			MyNumber = get('number'),
 			Max = findMax(HisValue,MyNumber);
 		true ->
@@ -108,19 +109,33 @@ pull() ->
 pushpull() ->
        Secret = get('secret'),
        if
-		Secret /= (undefined) ->
+		length(Secret) /= (0) ->
 		       push();
 		true ->
 		     io:format("")
        end.
        %%pull().
 
+buildSecret(NeighborSecret , 0) ->
+	io:format("");
+buildSecret(NeighborSecret , I) ->
+	{Secret , _} = lists:nth(I , NeighborSecret),
+	IsSecret = lists:keysearch(Secret , 1 , get('secret')),
+	if
+		IsSecret == (false) ->
+			NewSecret = [{max,get('number')} | get('secret')],
+			put(secret , (NewSecret));
+		true ->
+			io:format("")
+	end,
+	buildSecret(NeighborSecret , I-1).
+
 
 listen() ->
 
-       pushpull(),
+	pushpull(),
 
-       receive
+	receive
 
 		%%wake_up ->
 		%%	io:format("[~p] will do gossip~n", [Me]),
@@ -128,15 +143,16 @@ listen() ->
 		%%	listen();
 
 		{push_request , NeighborSecret , Neighbor} ->
-			update(NeighborSecret),
+			buildSecret(NeighborSecret , length(NeighborSecret)),
 			Neighbor ! {push_response , get('secret')},
+			update(NeighborSecret),
 			listen();
 
 		{pull_request , Neighbor} ->
 			io:format("| ~p | pull request from | ~p |~n",[get('name') , Neighbor]),
 			Secret = get('secret'),
 			if
-				Secret ==(undefined) ->
+				length(Secret) == (0) ->
 				       	Neighbor ! no_secret;
 				true ->
 					Neighbor ! {pull_response , get('secret') , get('name')},
@@ -145,27 +161,13 @@ listen() ->
 			listen();
 
 		find_max ->
-			Secret = get('secret'),
-			if
-				Secret == (undefined) ->
-				       NewSecret = [{max,get('number')}];
-				true ->
-				       NewSecret = [{max,get('number')} | get('secret')]
-			end,
+			NewSecret = [{max,get('number')} | get('secret')],
 			put(secret , (NewSecret)),
 			listen();
 
 		find_min ->
-			Secret = get('secret'),
-			if
-				Secret == (undefined) ->
-				       NewSecret = [{min,get('number')}];
-				true ->
-				       NewSecret = [{min,get('number')} | get('secret')]
-			end,
+			NewSecret = [{min,get('number')} | get('secret')],
 			put(secret , (NewSecret)),
-			io:format("Secret|~p|~n",[get('secret')]),
-			%%lang:send_after(?INTERVAL , Me , wake_up),
 			listen();
 
 		find_avg ->
@@ -186,7 +188,10 @@ init_dict(MyNumber, NeighborList) ->
 	put(number , (MyNumber)),
 	{_ , Me} = process_info( self() , registered_name ),
 	put(name , (Me)),
-	put(neighborList , (NeighborList)).
+	put(neighborList , (NeighborList)),
+	put(secret , ([])),
+	io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , self()]).
+
 
 process(MyNumber , NeighborList) ->
 
@@ -209,6 +214,7 @@ do_spawn(0) ->
 do_spawn(N) ->
 	ProcessName = list_to_atom( string:concat( "process" , integer_to_list( ?LIMIT - N ) ) ),
 	register(ProcessName , spawn(?MODULE , process , [(?LIMIT - N) , getRingNeighborList( ?LIMIT - N )])),
+	%%timer:sleep(2),
 	do_spawn(N-1).
 
 
