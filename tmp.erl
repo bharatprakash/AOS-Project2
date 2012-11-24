@@ -1,6 +1,6 @@
 -module(tmp).
 
--export([node/2, start_the_game/1, listen/0, find_max/0,fetch_response_find_max/0, start/0, find_average/0]).
+-export([node/2, start_the_game/1, listen/0, find_max/0,fetch_response_find_max/0, start/0, find_average/0, fetch_response_find_average/2]).
 
 -define(LIMIT , 1000).
 
@@ -29,8 +29,8 @@ listen() ->
 			end,
 			push_find_max();
 	
-	{"AVERAGE", Num, PID} ->
-			PID ! {"AVERAGE_Reply", get('myAveNumber'), self()},				
+	{"AVERAGE", Num, PID, TS} ->
+			PID ! {"AVERAGE_Reply", get('myAveNumber'), self(), TS},				
 			io:format("~w Received Request from ~w  , AVE ~w ~n", [self(), PID, get('myAveNumber')]),
 			Avg = get('myAveNumber'),
 			put('myAveNumber',((Avg + Num)/2)), 
@@ -84,18 +84,31 @@ fetch_response_find_max() ->
 push_find_average() ->
 		io:format("Sending Request from ~w  , AVE~w ~n", [self(), get('myAveNumber')]),
 		random:seed(now()),
-		lists:nth(random:uniform(length(get('myNeighbourList'))),get('myNeighbourList')) ! {"AVERAGE", get('myAveNumber'), self()},	
-		fetch_response_find_average().
+		Process = lists:nth(random:uniform(length(get('myNeighbourList'))),get('myNeighbourList')),
+		TS = now(),
+		Process ! {"AVERAGE", get('myAveNumber'), self(), TS},	
+		fetch_response_find_average(Process, TS).
 
-fetch_response_find_average() ->
+fetch_response_find_average(Process, TS) ->
 	receive
 	
-		{"AVERAGE_Reply", Num, PID} ->
-			io:format("~w Received AVE Reply from ~w  , AVE ~w ~n", [self(), PID, get('myAveNumber')]),
-			Avg = get('myAveNumber'),
-			put('myAveNumber',((Avg + Num)/2)), 
-			listen()
-		
+		{"AVERAGE_Reply", Num, PID, TS1} ->
+			if 
+				TS==TS1 AND PID==Process ->
+					io:format("~w Received AVE Reply from ~w  , AVE ~w ~n", [self(), PID, get('myAveNumber')]),
+					Avg = get('myAveNumber'),
+					put('myAveNumber',((Avg + Num)/2)), 
+					listen();
+				true ->
+					io:format("")
+			end,
+			if 
+				PID /= (Process) ->
+					fetch_response_find_average(Process, TS);
+				true ->
+					io:format("")
+			end
+			
 		after 3000 ->
 		listen()
 
