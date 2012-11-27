@@ -3,13 +3,13 @@
 
 -compile([nowarn_unused_function , nowarn_unused_vars]).
 
--export([start/0 , process/2 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , collectDeadProcesses/0]).
+-export([start/0 , process/2 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , collectDeadProcesses/0]).
 
 
 %% ---------- Definitions ----------
 
 %% # of processes
--define(LIMIT , 1000).
+-define(LIMIT , 10).
 
 %% # of Fragments
 -define(FRAGLIMIT , trunc(?LIMIT/2)).
@@ -185,12 +185,13 @@ doRetrieveFragUpdate(Secret) ->
 
 	{_ , HisFragId , HisFragValue} = Secret,
 
+	MyFragId = get('fragmentId'),
+
 	IsPresent = getMatch(Secret , get('secret')),
 
 	case  IsPresent of
 
 	        false ->
-			MyFragId = get('fragmentId'),
 			if
 				MyFragId == (HisFragId) ->
 					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | get('secret')]));
@@ -199,16 +200,91 @@ doRetrieveFragUpdate(Secret) ->
 			end;
 		_ ->
 			if
-				length(HisFragValue) /=0 ->
-					put(secret , ([Secret | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
+				MyFragId == (HisFragId) ->
+					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
 				true ->
-					true
+				        if
+						length(HisFragValue) /=0 ->
+							put(secret , ([Secret | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
+					true ->
+						true
+					end
 			end
 	end,
 	io:format("ReF | ~p | | ~p |~n",[get('name') , get('secret')]).
 
 
+%% ---------- Find Median ----------
+
+findMedian(List) ->
+	SortedList = lists:sort(List),
+
+	Length = length(SortedList),
+
+	case (Length rem 2) of
+
+	        0 ->
+		        Med1 = trunc(Length / 2),
+			Med2 = Med1 + 1,
+			Median = (lists:nth(Med1 , SortedList) + lists:nth(Med2 , SortedList)) / 2;
+		1 ->
+			Med = trunc((Length + 1) / 2),
+			Median = lists:nth(Med , SortedList)
+	end,
+
+	Median.
+
+
+mergeFragLists(L , []) ->
+	L;
+
+mergeFragLists(L1 , [E | L2]) ->
+	case lists:member(E , L1) of
+	        false ->
+		        L3 = [E | L1];
+		true ->
+			L3 = L1
+	end,
+	mergeFragLists(L3 , L2).
+
+
+getValueList([] , ValueList) ->
+	ValueList;
+getValueList([E | L] , ValueList) ->
+	{_ , Value} = E,
+	NewValueList = lists:append(Value , ValueList),
+	getValueList(L , NewValueList).
+
+
+doMedianUpdate(Secret) ->
+
+	{_ , _ , HisFragList} = Secret,
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MyFragList = [{get('fragmentId') , get('fragmentValue')}],
+			MergedList = mergeFragLists(MyFragList , HisFragList),
+			MergedValueList = getValueList(MergedList , []),
+			MyMedian = findMedian(MergedValueList),
+			%%MyMedian = findMedian([get('fragmentValue') | HisList]),
+			put(secret , ([{median , MyMedian , MergedList} | get('secret')]));
+		true ->
+			{_ , {_ , _ , MyFragList}} = lists:keysearch(median , 1 , get('secret')),
+			MergedList = mergeFragLists(MyFragList , HisFragList),
+			MergedValueList = getValueList(MergedList , []),
+			MyMedian = findMedian(MergedValueList),
+			%%MyMedian = findMedian([MyList | HisList]),
+			put(secret , [{median , MyMedian , MergedList} | lists:keydelete(median , 1 , get('secret'))])
+	end,
+
+	io:format("Median | ~p | | ~p |~n",[get('name') , MyMedian]).
+
+
 %% ---------- Update Driver ----------
+
 update([]) ->
 	true;
 
@@ -227,6 +303,8 @@ update([Secret | RemainingSecret]) ->
 		        doUpdateFragUpdate(Secret);
 		retrieve_frag ->
 		        doRetrieveFragUpdate(Secret);
+		median ->
+		        doMedianUpdate(Secret);
 		_ ->
 		        io:format("")
 	end,
@@ -279,13 +357,11 @@ waitPullResponse() ->
 	receive
 
 		{pull_response , NeighborSecret , Neighbor} ->
-			%%build(NeighborSecret),
+			build(NeighborSecret),
 			whereis(Neighbor) ! {pull_complete , get('secret')},
 			update(NeighborSecret);
-			%%io:format("pull response from | ~p | | ~p | | ~p |~n",[Neighbor , registered() , whereis(Neighbor)]);
 
 		 no_secret ->
-		 	%%io:format("| ~p | no secret~n",[get('name')])
 			io:format("")
 
 	after ?TIMEOUT ->
@@ -398,12 +474,13 @@ doRetrieveFragBuild(Secret) ->
 
 	{_ , HisFragId , HisFragValue} = Secret,
 
+	MyFragId = get('fragmentId'),
+
 	IsPresent = getMatch(Secret , get('secret')),
 
 	case  IsPresent of
 
 	        false ->
-			MyFragId = get('fragmentId'),
 			if
 				MyFragId == (HisFragId) ->
 					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | get('secret')]));
@@ -412,11 +489,32 @@ doRetrieveFragBuild(Secret) ->
 			end;
 		_ ->
 			if
-				length(HisFragValue) /=0 ->
-					put(secret , ([Secret | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
+				MyFragId == (HisFragId) ->
+					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
 				true ->
-					true
+				        if
+						length(HisFragValue) /=0 ->
+							put(secret , ([Secret | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
+					true ->
+						true
+					end
 			end
+	end.
+
+
+doMedianBuild(Secret) ->
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MyMedian = findMedian(get('fragmentValue')),
+			put(secret , ( [ {median , MyMedian , [{get('fragmentId') , get('fragmentValue')}]} | get('secret') ] ) );
+		true ->
+			true;
+		_ ->
+			io:format("")
 	end.
 
 
@@ -427,6 +525,8 @@ build([Secret | RemainingSecret]) ->
 
         Operation = element(1,Secret),
 
+	%%io:format("~p ~p ~p~n",[self() , Operation , get('secret')]),
+
 	case Operation of
 	        max ->
 		        doMaxBuild(Secret);
@@ -436,6 +536,8 @@ build([Secret | RemainingSecret]) ->
 		        doAvgBuild(Secret);
 		retrieve_frag ->
 			doRetrieveFragBuild(Secret);
+		median ->
+			doMedianBuild(Secret);
 		_ ->
 		        io:format("")
 	end,
@@ -447,6 +549,7 @@ build([Secret | RemainingSecret]) ->
 
 listen() ->
 
+	%%io:format("Secret | ~p | | ~p |~n",[get('name') , get('secret')]),
 	pushpull(),
 
 	receive
@@ -465,7 +568,7 @@ listen() ->
 			listen();
 
 		{push_request , NeighborSecret , Neighbor} ->
-			%%build(NeighborSecret),
+			build(NeighborSecret),
 			Neighbor ! {push_response , get('secret')},
 			update(NeighborSecret),
 			listen();
@@ -499,7 +602,6 @@ listen() ->
 			listen();
 
 		{retrieve_fragment , FragmentId} ->
-			io:format("Received msg~n"),
 			MyFragmentId = get('fragmentId'),
 			if
 				FragmentId == (MyFragmentId) ->
@@ -508,6 +610,11 @@ listen() ->
 				true ->
 					put(secret , ([{retrieve_frag , FragmentId , []} | get('secret')]))					
 			end,
+			listen();
+
+		find_median ->
+			NewSecret = [ {median , findMedian(get('fragmentValue')) , [{get('fragmentId') , get('fragmentValue')}]} | get('secret')],
+			put(secret , (NewSecret)),
 			listen()
 
 	after ?TIMEOUT ->
@@ -705,7 +812,8 @@ start() ->
 	%%findAvg(),
 	%%findMin(),
 	%%updateFragment(0 , [5,0]),
-	retrieveFragment(trunc(?LIMIT/4)),
+	%%retrieveFragment(trunc(?LIMIT/4)),
+	findMedian(),
 	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
 	io:format("").
 
@@ -750,6 +858,14 @@ calculateRetrieve(FragmentId) ->
 
 retrieveFragment(FragmentId) ->
 	spawn(?MODULE , calculateRetrieve , [FragmentId]).
+
+
+calculateMedian() ->
+	whereis(p0) ! find_median,
+	exit(self() , "end of purpose").
+
+findMedian() ->
+	spawn(?MODULE , calculateMedian , []).
 
 
 %% ---------- Unused Functions ----------
