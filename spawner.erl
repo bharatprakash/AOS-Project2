@@ -9,7 +9,7 @@
 %% ---------- Definitions ----------
 
 %% # of processes
--define(LIMIT , 10).
+-define(LIMIT , 1000).
 
 %% # of Fragments
 -define(FRAGLIMIT , trunc(?LIMIT/2)).
@@ -19,6 +19,25 @@
 
 %% Interval for each Gossip Iteration
 -define(INTERVAL , 100).
+
+
+%% ---------- Derive Fragment Value List and Id List ----------
+
+getFragValueList([]) ->
+	N=[],
+	N;
+
+getFragValueList([E | L]) ->
+	{_ , Value} = E,
+	lists:append(Value , getFragValueList(L)).
+
+getFragIdList([]) ->
+	N=[],
+	N;
+
+getFragIdList([E | L]) ->
+	{Id , _} = E,
+	[Id | getFragIdList(L)].
 
 
 %% ---------- Selection of Neighbor ----------
@@ -42,6 +61,7 @@ selectNeighbor() ->
 getOperationList([]) ->
 	L = [],
 	L;
+
 getOperationList([Secret | RemainingSecretList]) ->
 	Operation = element(1 , Secret),
 	[Operation | getOperationList(RemainingSecretList)].
@@ -67,6 +87,8 @@ findMyMax(N , L , Max) ->
         findMyMax(N-1 , L , findMax2(Max , Nth)).
 
 
+%% ---------- Max Operation for Update ----------
+
 doMaxUpdate(Secret) ->
 
 	{_ , HisMax} = Secret,
@@ -76,7 +98,8 @@ doMaxUpdate(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			MyMax = findMyMax(length(get('fragmentValue')) , get('fragmentValue') , lists:nth(1 , get('fragmentValue'))),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyMax = findMyMax(length(MyFragValueList) , MyFragValueList , lists:nth(1 , MyFragValueList)),
 			Max = findMax2(HisMax , MyMax),
 			put(secret , ([{max , Max} | get('secret')]));
 		true ->
@@ -117,7 +140,8 @@ doMinUpdate(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			MyMin = findMyMin(length(get('fragmentValue')) , get('fragmentValue') , lists:nth(1 , get('fragmentValue'))),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyMin = findMyMin(length(MyFragValueList) , MyFragValueList , lists:nth(1 , MyFragValueList)),
 			Min = findMin2(HisMin , MyMin),
 			put(secret , ([{min , Min} | get('secret')]));
 		true ->
@@ -144,9 +168,9 @@ doAvgUpdate(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			FragValue = get('fragmentValue'),
-			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, FragValue)) / length(FragValue),
-			MyLen = length(FragValue),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, MyFragValueList)) / length(MyFragValueList),
+			MyLen = length(MyFragValueList),
 			Avg = findAvg2(HisAvg , HisLen , MyAvg , MyLen),
 			put(secret , ([{avg , Avg , MyLen} | get('secret')]));
 		true ->
@@ -165,10 +189,12 @@ doUpdateFragUpdate(Secret) ->
 
 	        false ->
 			{_ , HisId , HisValue} = Secret,
-			MyFragId = get('fragmentId'),			
+			MyFragIdList = getFragIdList(get('fragment')),
+			IsPresent = lists:member(HisId , MyFragIdList),			
 	 		if
-			        HisId == (MyFragId) ->
-      	 	      		        put(fragmentValue , (HisValue));
+			        IsPresent == (true) ->
+					NewFragment = [{HisId , HisValue} | lists:keydelete(HisId , 1 , get('fragment'))],
+					put(fragment , (NewFragment));
 				true ->
 		      		     io:format("")
 	 		end,
@@ -176,7 +202,7 @@ doUpdateFragUpdate(Secret) ->
 		true ->
 			io:format("")
 	end,
-	io:format("UpF | ~p | | ~p , ~p |~n", [get('name') , get('fragmentId') , get('fragmentValue')]).
+	io:format("UpF | ~p | | ~p |~n", [get('name') , get('fragment')]).
 
 
 %% ---------- Fragment Retrieval ----------
@@ -185,23 +211,26 @@ doRetrieveFragUpdate(Secret) ->
 
 	{_ , HisFragId , HisFragValue} = Secret,
 
-	MyFragId = get('fragmentId'),
+	MyFragIdList = getFragIdList(get('fragment')),
 
+	IdPresent = lists:member(HisFragId , MyFragIdList),
 	IsPresent = getMatch(Secret , get('secret')),
 
 	case  IsPresent of
 
 	        false ->
 			if
-				MyFragId == (HisFragId) ->
-					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | get('secret')]));
+				IdPresent == (true) ->
+					{_ , {_ , MyFragValue}} = lists:keysearch(HisFragId , 1 , get('fragment')),
+					put(secret , ([{retrieve_frag , HisFragId , MyFragValue} | get('secret')]));
 				true ->
 					put(secret , ([Secret | get('secret')]))
 			end;
 		_ ->
 			if
-				MyFragId == (HisFragId) ->
-					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
+				IdPresent == (true) ->
+					{_ , {_ , MyFragValue}} = lists:keysearch(HisFragId , 1 , get('fragment')),
+					put(secret , ([{retrieve_frag , HisFragId , MyFragValue} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
 				true ->
 				        if
 						length(HisFragValue) /=0 ->
@@ -217,6 +246,7 @@ doRetrieveFragUpdate(Secret) ->
 %% ---------- Find Median ----------
 
 findMedian(List) ->
+
 	SortedList = lists:sort(List),
 
 	Length = length(SortedList),
@@ -265,18 +295,16 @@ doMedianUpdate(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			MyFragList = [{get('fragmentId') , get('fragmentValue')}],
-			MergedList = mergeFragLists(MyFragList , HisFragList),
+			MyFragments = get('fragment'),
+			MergedList = mergeFragLists(MyFragments , HisFragList),
 			MergedValueList = getValueList(MergedList , []),
 			MyMedian = findMedian(MergedValueList),
-			%%MyMedian = findMedian([get('fragmentValue') | HisList]),
 			put(secret , ([{median , MyMedian , MergedList} | get('secret')]));
 		true ->
 			{_ , {_ , _ , MyFragList}} = lists:keysearch(median , 1 , get('secret')),
 			MergedList = mergeFragLists(MyFragList , HisFragList),
 			MergedValueList = getValueList(MergedList , []),
 			MyMedian = findMedian(MergedValueList),
-			%%MyMedian = findMedian([MyList | HisList]),
 			put(secret , [{median , MyMedian , MergedList} | lists:keydelete(median , 1 , get('secret'))])
 	end,
 
@@ -417,7 +445,8 @@ doMaxBuild(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			MyMax = findMyMax(length(get('fragmentValue')) , get('fragmentValue') , lists:nth(1 , get('fragmentValue'))),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyMax = findMyMax(length(MyFragValueList) , MyFragValueList , lists:nth(1 , MyFragValueList)),
 			put(secret , ([{max , MyMax} | get('secret')]));
 		true ->
 			true
@@ -431,7 +460,8 @@ doMinBuild(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			MyMin = findMyMin(length(get('fragmentValue')) , get('fragmentValue') , lists:nth(1 , get('fragmentValue'))),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyMin = findMyMin(length(MyFragValueList) , MyFragValueList , lists:nth(1 , MyFragValueList)),
 			put(secret , ([{min , MyMin} | get('secret')]));
 		true ->
 			true
@@ -445,9 +475,9 @@ doAvgBuild(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			FragValue = get('fragmentValue'),
-			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, FragValue)) / length(FragValue),
-			MyLen = length(FragValue),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, MyFragValueList)) / length(MyFragValueList),
+			MyLen = length(MyFragValueList),
 			put(secret , ([{avg , MyAvg , MyLen} | get('secret')]));
 		true ->
 			true
@@ -474,7 +504,9 @@ doRetrieveFragBuild(Secret) ->
 
 	{_ , HisFragId , HisFragValue} = Secret,
 
-	MyFragId = get('fragmentId'),
+	MyFragIdList = getFragIdList(get('fragment')),
+
+	IdPresent = lists:member(HisFragId , MyFragIdList),
 
 	IsPresent = getMatch(Secret , get('secret')),
 
@@ -482,15 +514,17 @@ doRetrieveFragBuild(Secret) ->
 
 	        false ->
 			if
-				MyFragId == (HisFragId) ->
-					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | get('secret')]));
+				IdPresent == (true) ->
+					{_ , {_ , MyFragValue}} = lists:keysearch(HisFragId , 1 , get('fragment')),
+					put(secret , ([{retrieve_frag , HisFragId , MyFragValue} | get('secret')]));
 				true ->
 					put(secret , ([Secret | get('secret')]))
 			end;
 		_ ->
 			if
-				MyFragId == (HisFragId) ->
-					put(secret , ([{retrieve_frag , MyFragId , get('fragmentValue')} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
+				IdPresent == (true) ->
+					{_ , {_ , MyFragValue}} = lists:keysearch(HisFragId , 1 , get('fragment')),
+					put(secret , ([{retrieve_frag , HisFragId , MyFragValue} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))]));
 				true ->
 				        if
 						length(HisFragValue) /=0 ->
@@ -509,8 +543,8 @@ doMedianBuild(Secret) ->
 	case lists:member(Operation , getOperationList(get('secret'))) of
 
 	        false ->
-			MyMedian = findMedian(get('fragmentValue')),
-			put(secret , ( [ {median , MyMedian , [{get('fragmentId') , get('fragmentValue')}]} | get('secret') ] ) );
+			MyMedian = findMedian(getFragValueList(get('fragment'))),
+			put(secret , ( [ {median , MyMedian , get('fragment')} | get('secret') ] ) );
 		true ->
 			true;
 		_ ->
@@ -574,27 +608,31 @@ listen() ->
 			listen();
 
 		find_max ->
-			NewSecret = [{max , findMyMax(length(get('fragmentValue')) , get('fragmentValue') , lists:nth(1 , get('fragmentValue')))} | get('secret')],
+			MyFragValueList = getFragValueList(get('fragment')),
+			NewSecret = [{max , findMyMax(length(MyFragValueList) , MyFragValueList , lists:nth(1 , MyFragValueList))} | get('secret')],
 			put(secret , (NewSecret)),
 			listen();
 
 		find_min ->
-			NewSecret = [{min , findMyMin(length(get('fragmentValue')) , get('fragmentValue') , lists:nth(1 , get('fragmentValue')))} | get('secret')],
+			MyFragValueList = getFragValueList(get('fragment')),
+			NewSecret = [{min , findMyMin(length(MyFragValueList) , MyFragValueList , lists:nth(1 , MyFragValueList))} | get('secret')],
 			put(secret , (NewSecret)),
 			listen();
 
 		find_avg ->
-			FragValue = get('fragmentValue'),
-			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, FragValue)) / length(FragValue),
-			MyLen = length(FragValue),
+			MyFragValueList = getFragValueList(get('fragment')),
+			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, MyFragValueList)) / length(MyFragValueList),
+			MyLen = length(MyFragValueList),
 			put(secret , ([{avg , MyAvg , MyLen} | get('secret')])),
 			listen();
 
 		{update_fragment , FragmentId , Value} ->
-			MyFragmentId = get('fragmentId'),
+			MyFragIdList = getFragIdList(get('fragment')),
+			IsPresent = lists:member(FragmentId , MyFragIdList),
 			if
-				FragmentId == (MyFragmentId) ->
-					 put(fragmentValue , (Value));
+				IsPresent == (true) ->
+					NewFragment = [{FragmentId , Value} | lists:keydelete(FragmentId , 1 , get('fragment'))],
+					put(fragment , (NewFragment));
 				true ->
 					 io:format("")
 			end,
@@ -602,18 +640,20 @@ listen() ->
 			listen();
 
 		{retrieve_fragment , FragmentId} ->
-			MyFragmentId = get('fragmentId'),
+			MyFragIdList = getFragIdList(get('fragment')),
+			IsPresent = lists:member(FragmentId , MyFragIdList),
 			if
-				FragmentId == (MyFragmentId) ->
-				        MyFragmentValue = get('fragmentValue'),
-					put(secret , ([{retrieve_frag , FragmentId , MyFragmentValue} | get('secret')]));
+				IsPresent == (true) ->
+					MyFragments = get('fragment'),
+				        {_ , {MyFragId , MyFragValue}} = lists:keysearch(FragmentId , 1 , MyFragments),
+					put(secret , ([{retrieve_frag , MyFragId , MyFragValue} | get('secret')]));
 				true ->
 					put(secret , ([{retrieve_frag , FragmentId , []} | get('secret')]))					
 			end,
 			listen();
 
 		find_median ->
-			NewSecret = [ {median , findMedian(get('fragmentValue')) , [{get('fragmentId') , get('fragmentValue')}]} | get('secret')],
+			NewSecret = [ {median , findMedian(getFragValueList(get('fragment'))) , get('fragment')} | get('secret')],
 			put(secret , (NewSecret)),
 			listen()
 
@@ -626,16 +666,15 @@ listen() ->
 %% ---------- Initialize the Process Dictionary ----------
 
 init_dict(MyNumber, NeighborList) ->
+
 	put(number , (MyNumber)),
-	Me = list_to_atom( string:concat( "p" , integer_to_list(MyNumber) ) ),
-	put(name , (Me)),
+	put(name , (list_to_atom( string:concat("p" , integer_to_list(MyNumber))))),
 	put(neighborList , (NeighborList)),
 	put(secret , ([])),
-	put(fragmentId , (MyNumber rem ?FRAGLIMIT)),
-	%%put(fragmentValue , (MyNumber rem ?FLIMIT)),
-	put(fragmentValue , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]),
+	put(fragment , [{(MyNumber rem ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]} , {((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) + ?LIMIT , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) + ?LIMIT]}]),
 	put(phase , (push)),
-	io:format("| ~p | | ~p | | ~p | | ~p | | ~p , ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragmentId') , get(fragmentValue)]),
+
+	io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragment')]),
 	io:format("").
 
 
@@ -651,9 +690,11 @@ process(MyNumber , NeighborList) ->
 %% ---------- Ring Topology ----------
 
 getRingNeighborList(MyNumber) ->
+
 	Me = list_to_atom( string:concat( "p" , integer_to_list( MyNumber ))),
 	Predecessor = list_to_atom( string:concat( "p" , integer_to_list( ((?LIMIT + MyNumber - 1) rem ?LIMIT )))),
 	Successor = list_to_atom( string:concat( "p" , integer_to_list( ((MyNumber + 1) rem ?LIMIT )))),
+
 	NeighborList = [Me , Predecessor , Successor],
 	NeighborList.
 
@@ -813,7 +854,7 @@ start() ->
 	%%findMin(),
 	%%updateFragment(0 , [5,0]),
 	%%retrieveFragment(trunc(?LIMIT/4)),
-	findMedian(),
+	%%findMedian(),
 	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
 	io:format("").
 
