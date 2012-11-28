@@ -624,10 +624,8 @@ listen() ->
 
 %% ---------- Initialize the Process Dictionary ----------
 
-init_dict(MyNumber, NeighborList, Frags) ->
+init_dict(MyNumber, NeighborList, FragmentList) ->
 		
-	FragmentList = [lists:nth(MyNumber+1,Frags)], 
-	io:format("~n ~p ~n",[FragmentList]),
 	put(frag, (FragmentList)),
 	put(number , (MyNumber)),
 	Me = list_to_atom( string:concat( "p" , integer_to_list(MyNumber) ) ),
@@ -644,9 +642,9 @@ init_dict(MyNumber, NeighborList, Frags) ->
 
 %% ---------- Entry Point of Process ----------
 
-process(MyNumber , NeighborList, Frags) ->
+process(MyNumber , NeighborList, FragmentList) ->
 	
-	init_dict(MyNumber , NeighborList, Frags),
+	init_dict(MyNumber , NeighborList, FragmentList),
 	listen(),
 	io:format("| ~p | I am exiting",[get('name')]).
 
@@ -776,10 +774,11 @@ do_spawn(0, _) ->
 	ok;
 
 do_spawn(N, Frags) ->
-    	ProcessName = list_to_atom( string:concat( "p" , integer_to_list( ?LIMIT - N ) ) ),
+    ProcessName = list_to_atom( string:concat( "p" , integer_to_list( ?LIMIT - N ) ) ),
 	process_flag(trap_exit, true),
+	FragmentList = [lists:nth(?LIMIT - N + 1,Frags)],	
 	%%register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getRingNeighborList( ?LIMIT - N )])),
-	register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getChordNeighborList( ?LIMIT - N ), Frags])),
+	register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getChordNeighborList( ?LIMIT - N ), FragmentList])),
 	%%register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getMirrorRingNeighborList( ?LIMIT - N )])),
 	do_spawn(N-1, Frags).
 
@@ -825,7 +824,8 @@ getFrags(Frags, FileDev, NumLines, N) ->
 	getFrags([X|Frags], FileDev, NumLines,N - 1).
 	
 do_read(Lines, _, 0) ->
-     lists:reverse(Lines);
+     %%lists:reverse(Lines);
+	 Lines;
 do_read(Lines, FileDev, L) ->
      case file:read_line(FileDev) of
           {ok, Line} ->
@@ -837,15 +837,29 @@ do_read(Lines, FileDev, L) ->
                do_read(Lines, FileDev, 0)
      end.
 
+
+countLines(eof,N) ->
+     N;
+countLines(FileDev, N) ->
+     case file:read_line(FileDev) of
+          {ok, Line} ->
+			   countLines(FileDev, N + 1);
+          eof ->
+               countLines(eof, N)
+     end.
+
 %% ---------- Entry Point ----------
 
 start() ->
 	
-	%%{ok, FileDev} = file:open("./data.dat", [raw, read, read_ahead]),
+	{ok, FileDev} = file:open("./data.dat", [raw, read, read_ahead]),
+	NumLines = countLines(FileDev, 0),
+	file:close(FileDev),
+	
 	Frags = getFragList(3,12),
-	io:format("~n ~p ~n",[Frags]),
+	
 	do_spawn(?LIMIT, Frags),
-	%%file:close(FileDev),
+	
 
 	%%findMax(),
 	%%findAvg(),
