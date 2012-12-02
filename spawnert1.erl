@@ -51,6 +51,19 @@ getFragIdList([E | L]) ->
 
 %% ---------- Selection of Neighbor ----------
 
+selectNeighbor() ->
+	random:seed(now()),
+	Neighbor = list_to_atom( string:concat( "p" , integer_to_list((random:uniform(?LIMIT)-1)))),
+	IsAlive = is_process_alive(whereis(Neighbor)),
+	if
+		IsAlive == (false) ->
+			  SelectedNeighbor = selectNeighbor();
+		true ->
+			  SelectedNeighbor = Neighbor
+	end,
+	SelectedNeighbor.
+
+
 selectNeighborOld() ->
 	MyNeighbors = getMirrorChordNeighborList(get('number')), %%get('neighborList'),
 	random:seed(now()),
@@ -65,7 +78,7 @@ selectNeighborOld() ->
 	SelectedNeighbor.
 
 
-selectNeighbor() ->
+selectNeighborNew() ->
 	MyNeighbors = getMirrorChordNeighborList(get('number')) , %%get('neighborList'),
 	random:seed(now()),
 	Index = random:uniform(2*(length(MyNeighbors))),
@@ -1051,7 +1064,7 @@ pushpull() ->
 						_ ->
 							true
 					end,
-					put(steps , (get('steps') rem ?STEPLIMIT)),
+					%%put(steps , (get('steps') rem ?STEPLIMIT)),
 					true;
 				true ->
 					true
