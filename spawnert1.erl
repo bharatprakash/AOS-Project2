@@ -9,17 +9,19 @@
 %% ---------- Definitions ----------
 
 %% # of processes
--define(LIMIT , 5).
+-define(LIMIT , 100).
 
 %% # of Fragments
 -define(FRAGLIMIT , trunc(?LIMIT/2)).
 
 %% # of steps after convergence
--define(CONVLIMIT , trunc(1+(math:log(?LIMIT) / math:log(2)))).
+-define(CONVLIMIT , trunc(3*(math:log(?LIMIT) / math:log(2)))).
 
--define(AVGACCURACY , (?LIMIT / 10)).
+-define(AVGACCURACY , (?LIMIT / 100)).
 
 -define(STEPLIMIT , trunc((math:log(?LIMIT)/math:log(2)))).
+
+-define(MEDIANROUNDLIMIT , trunc(2*(math:log(?LIMIT)/math:log(2)))).
 
 %% Timeout of receive 
 -define(TIMEOUT , 1000).
@@ -777,7 +779,7 @@ doFineMedianUpdate() ->
 
 	if
 	     	Secret /= (false) ->
-			{_ , TotalCount , TermCount , MyRound , Min , Max , MyN , LessThan , LessThanList} = Secret,
+			{_ , TotalCount , TermCount , MyRound , Min , Max , MyN , LessThan , LessThanList , BestCombi} = Secret,
 			TermLimit = (?CONVLIMIT),
 			if
 				TermCount < (TermLimit) ->
@@ -785,13 +787,21 @@ doFineMedianUpdate() ->
 					NewTermCount = TermCount + 1,
 					if
 						NewTermCount == (TermLimit) ->
-							io:format("Median-Round-~p,~p,~p,~p,~p,~p~n" , [MyRound , get('name') , NewTotalCount , NewTermCount , (Min+Max)/2 , LessThan]),
-							case (LessThan < (MyN/2)) of
-							     	true ->
-									self() ! {trigger_finemedian , MyRound+1 , (Max+Min)/2 , Max , MyN};
-								false ->
-									self() ! {trigger_finemedian , MyRound+1 , Min , (Max+Min)/2 , MyN}
-							end;
+							%%io:format("Median-Round-~p,~p,~p,~p,~p,~p,~p,~p~n" , [MyRound , get('name') , NewTotalCount , NewTermCount , Min , Max , (Min+Max)/2 , LessThan]),
+								{BestMin , BestMax , BestCount} = BestCombi,
+								if
+									((BestCount =< (MyN/2)) and (BestCount >= LessThan)) ->
+										self() ! {trigger_finemedian , MyRound+1 , BestMin , BestMin , MyN , BestCombi};
+									true ->
+										if
+											LessThan < ((MyN/2)) ->
+												self() ! {trigger_finemedian , MyRound+1 , (Max+Min)/2 , Max , MyN , {Min , Max , LessThan}};
+											LessThan > ((MyN/2)) ->
+												self() ! {trigger_finemedian , MyRound+1 , Min , (Max+Min)/2 , MyN , {Min , Max , LessThan}};
+											true ->
+												self() ! {got_median , {Min , Max , LessThan}}
+										end
+								end;
 						true ->
 							true
 					end;
@@ -799,16 +809,16 @@ doFineMedianUpdate() ->
 					NewTotalCount = TotalCount,
 					NewTermCount = TermCount
 			end,
-			put(secret , ([{fine_median , NewTotalCount , NewTermCount , MyRound , Min , Max , MyN , LessThan , LessThanList} | lists:keydelete(fine_median , 1 , get('secret'))]));
+			put(secret , ([{fine_median , NewTotalCount , NewTermCount , MyRound , Min , Max , MyN , LessThan , LessThanList , BestCombi} | lists:keydelete(fine_median , 1 , get('secret'))]));
 		true ->
 			true
-	end,
+	end.
 
-	io:format("Fine Median | ~p | | ~p |~n",[get('name') , get('secret')]).
+	%%io:format("Fine Median | ~p | | ~p |~n",[get('name') , get('secret')]).
 
 
 doFineMedianUpdate(Secret) ->
-	{_ , _ , _ , Round , HisMin , HisMax , N , HisLessThan , HisLessThanList} = Secret,
+	{_ , _ , _ , Round , HisMin , HisMax , N , HisLessThan , HisLessThanList , _} = Secret,
 
 	IsMatch = getFineMedianSecretMatch(Secret , get('secret')),
 
@@ -817,7 +827,7 @@ doFineMedianUpdate(Secret) ->
 	     	false ->
 			true;
 		_ ->
-			{_ , TotalCount , TermCount , MyRound , MyMin , MyMax , MyN , MyLessThan , MyLessThanList} = IsMatch,
+			{_ , TotalCount , TermCount , MyRound , MyMin , MyMax , MyN , MyLessThan , MyLessThanList , BestCombi} = IsMatch,
 			LessThanList = mergeSeenFrags(HisLessThanList , MyLessThanList),
 			LessThan = getLessThanCount(LessThanList),
 			Min = findMin2(HisMin , MyMin),
@@ -832,13 +842,21 @@ doFineMedianUpdate(Secret) ->
 				       		        NewTermCount = TermCount + 1,
 							if
 								NewTermCount == (TermLimit) ->
-									    io:format("Median-Round-~p,~p,~p,~p,~p,~p~n" , [MyRound , get('name') , NewTotalCount , NewTermCount , (Min+Max)/2 , LessThan]),
-									    case (LessThan < (MyN/2)) of
-									    	 	true ->
-												self() ! {trigger_finemedian , MyRound+1 , (Max+Min)/2 , Max , MyN};
-											false ->
-												self() ! {trigger_finemedian , MyRound+1 , Min , (Max+Min)/2 , MyN}
-									    end;
+									%%io:format("Median-Round-~p,~p,~p,~p,~p,~p,~p,~p~n" , [MyRound , get('name') , NewTotalCount , NewTermCount , Min , Max , (Min+Max)/2 , LessThan]),
+									{BestMin , BestMax , BestCount} = BestCombi,
+									if
+										((BestCount =< (MyN/2)) and (BestCount >= LessThan)) ->
+											self() ! {trigger_finemedian , MyRound+1 , BestMin , BestMin , MyN , BestCombi};
+										true ->
+											if
+												LessThan < ((MyN/2)) ->
+													self() ! {trigger_finemedian , MyRound+1 , (Max+Min)/2 , Max , MyN , {Min , Max , LessThan}};
+												LessThan > ((MyN/2)) ->
+													self() ! {trigger_finemedian , MyRound+1 , Min , (Max+Min)/2 , MyN , {Min , Max , LessThan}};
+												true ->
+													self() ! {got_median , {Min , Max , LessThan}}
+											end
+									end;
 								true ->
 									true
 							end;
@@ -849,10 +867,10 @@ doFineMedianUpdate(Secret) ->
 					NewTotalCount = TotalCount,
 					NewTermCount = TermCount
 			end,
-			put(secret , ([{fine_median , NewTotalCount , NewTermCount , MyRound , Min , Max , MyN , LessThan , LessThanList} | lists:keydelete(fine_median
+			put(secret , ([{fine_median , NewTotalCount , NewTermCount , MyRound , Min , Max , MyN , LessThan , LessThanList , BestCombi} | lists:keydelete(fine_median
  , 1 , get('secret'))]))
-	end,
-	io:format("Fine Median | ~p | | ~p |~n",[get('name') , get('secret')]).
+	end.
+	%%io:format("Fine Median | ~p | | ~p |~n",[get('name') , get('secret')]).
 
 
 %% ---------- Update Driver ----------
@@ -962,7 +980,7 @@ waitPullResponse() ->
 
 		{pull_response , NeighborSecret , Neighbor} ->
 			build(NeighborSecret),
-			Secret = getLiveSecrets(get('secret')),
+			Secret = lists:merge(getLiveSecrets(get('secret')) , doFineMedianBuild(NeighborSecret)),
 			%%io:format("| ~p | sending pull_complete~n| ~p |~n| ~p |~n~n~n",[get('name'),get('secret') , Secret]),
 			whereis(Neighbor) ! {pull_complete , Secret},
 			%%io:format("| ~p | going to update", [get('name')]),
@@ -1013,8 +1031,9 @@ pushpull() ->
 							push();
 						_ ->
 							true
-					end;
-					%%put(steps , (get('steps') rem ?STEPLIMIT));
+					end,
+					%%put(steps , (get('steps') rem ?STEPLIMIT)),
+					true;
 				true ->
 					true
 			end,
@@ -1200,6 +1219,20 @@ doMedianBuild(Secret) ->
 	end.
 
 
+doFineMedianBuild(NeighborSecret) ->
+	IsPresent = lists:keysearch(fine_median , 1 , NeighborSecret),
+	case IsPresent of
+		false ->
+			L = [];
+		_ ->
+			{_ , {_ , _ , _ , Round , Min , Max , N , LessThan , LessThanList , _}} = IsPresent,
+			MyLessThanList = getLessThanList(((Min+Max)/2) , get('fragment')),
+			MyLessThanCount = getLessThanCount(MyLessThanList),
+			L = [{fine_median , 0 , 0 , Round , Min , Max , N , MyLessThanCount , MyLessThanList , {Min , Max , MyLessThanCount}}]
+	end,
+	%%io:format("~p will give ~p~n",[get('name') , L]),
+	L.
+
 
 build([]) ->
 	true;
@@ -1223,8 +1256,8 @@ build([Secret | RemainingSecret]) ->
 			doRetrieveFragBuild(Secret);
 		median ->
 			doMedianBuild(Secret);
-		%%finemedian ->
-		%%	doFineMedianBuild(Secret);
+		%%fine_median ->
+			%%doFineMedianBuild(Secret);
 		_ ->
 		        true
 	end,
@@ -1239,7 +1272,7 @@ getMedianLessSecret([]) ->
 getMedianLessSecret([Secret | Secrets]) ->
 	Operation = element(1 , Secret),
 	case Operation of
-	     	finemedian ->
+	     	fine_median ->
 			getMedianLessSecret(Secrets);
 		_ ->
 			[Secret | getMedianLessSecret(Secrets)]
@@ -1271,7 +1304,7 @@ listen() ->
 
 		{push_request , NeighborSecret , Neighbor} ->
 			build(NeighborSecret),
-			Secret = getLiveSecrets(get('secret')),
+			Secret = lists:merge(getLiveSecrets(get('secret')) , doFineMedianBuild(NeighborSecret)),
 			%%io:format("| ~p | doing pull_response~n| ~p |~n| ~p |~n~n~n",[get('name') , get('secret') , Secret]),
 			Neighbor ! {push_response ,Secret},
 			%%io:format("| ~p | going to update", [get('name')]),
@@ -1351,26 +1384,37 @@ listen() ->
 					%%put('secret' , L1),
 					%%L2 = lists:keydelete(min , 1 , get('secret')),
 					%%put('secret' , (L2)),
-					self() ! {trigger_finemedian , (1) , get('min') , get('max') , ?LIMIT};
+					self() ! {trigger_finemedian , (1) , get('min') , get('max') , ?LIMIT*2 , {get('min') , get('max') , 0}};
 				false ->
 					self() ! find_finemedian
 			end,
 			selectNeighbor() ! find_finemedian,
 			listen();
 
-		{trigger_finemedian , Round , Min , Max , N} ->
+		{trigger_finemedian , Round , Min , Max , N , BestCombi} ->
 			case (get('medianRound') == (Round - 1)) of
 			     	true ->
-					io:format("| ~p | karto re baba | ~p |~n",[get('name') , get('secret')]),
-					put(medianRound , (Round)),
-					Mid = (Min + Max) / 2,
-					LessThanList = getLessThanList(Mid , get('fragment')),
-					LessThanCount = getLessThanCount(LessThanList),
-					MedianLessSecret = getMedianLessSecret(get('secret')),
-					put(secret , [{fine_median , 0 , 0 , get('medianRound') , Min , Max , N , LessThanCount , LessThanList} | MedianLessSecret]);
+					MedianRoundLimit = ?MEDIANROUNDLIMIT,
+					case Round < (MedianRoundLimit) of
+					     	true ->
+							%%io:format("| ~p | karto re baba #~p | ~p |~n",[get('name') , Round , get('secret')]),
+							put(medianRound , (Round)),
+							Mid = (Min + Max) / 2,
+							LessThanList = getLessThanList(Mid , get('fragment')),
+							LessThanCount = getLessThanCount(LessThanList),
+							MedianLessSecret = getMedianLessSecret(get('secret')),
+							put(secret , [{fine_median , 0 , 0 , get('medianRound') , Min , Max , N , LessThanCount , LessThanList , BestCombi} | MedianLessSecret]);
+						false ->
+							self() ! {got_median , BestCombi}
+					end;
 				false ->
 					true
 			end,
+			listen();
+
+		{got_median , BestCombi} ->
+			{Min , Max , _} = BestCombi,
+			io:format("| ~p | Hurray!!! It's | ~p |~n",[get('name') , (Min+Max)/2]),
 			listen()
 
 	after ?TIMEOUT ->
@@ -1389,10 +1433,10 @@ init_dict(MyNumber, NeighborList) ->
 	put(secret , ([])),
 	put(steps , 0),
 put(medianRound , 0),
-	put(fragment , [{MyNumber , [MyNumber]}]),
-	%%put(fragment , [{(MyNumber rem ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]} , {((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) + ?LIMIT , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) + ?LIMIT]}]),
+	%%put(fragment , [{MyNumber , [?LIMIT - MyNumber]}]),
+	put(fragment , [{(MyNumber rem ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]} , {((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) + ?LIMIT , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) + ?LIMIT]}]),
 	put(phase , (push)),
-	io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragment')]),
+	%%io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragment')]),
 	true.
 
 
