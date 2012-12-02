@@ -9,7 +9,7 @@
 %% ---------- Definitions ----------
 
 %% # of processes
--define(LIMIT , 100).
+-define(LIMIT , 1000).
 
 %% # of Fragments
 -define(FRAGLIMIT , trunc(?LIMIT/2)).
@@ -51,7 +51,7 @@ getFragIdList([E | L]) ->
 
 %% ---------- Selection of Neighbor ----------
 
-selectNeighbor() ->
+selectNeighborOld() ->
 	MyNeighbors = getMirrorChordNeighborList(get('number')), %%get('neighborList'),
 	random:seed(now()),
 	Neighbor = lists:nth(random:uniform(length(MyNeighbors)) , MyNeighbors),
@@ -63,6 +63,25 @@ selectNeighbor() ->
 			  SelectedNeighbor = Neighbor
 	end,
 	SelectedNeighbor.
+
+
+selectNeighbor() ->
+	MyNeighbors = getMirrorChordNeighborList(get('number')) , %%get('neighborList'),
+	random:seed(now()),
+	Index = random:uniform(2*(length(MyNeighbors))),
+	case (Index rem 2) of
+		0 ->
+			Neighbor = lists:nth(trunc(Index/2) , MyNeighbors),
+			IsPresent = lists:member(Neighbor , registered()),
+			if
+				IsPresent == (false) ->
+			  		selectNeighbor();
+				true ->
+					Neighbor
+			end;
+	     	1 ->
+			get('name')
+	end.
 
 
 %% ---------- List of Operations in Secret ----------
@@ -1032,7 +1051,7 @@ pushpull() ->
 						_ ->
 							true
 					end,
-					%%put(steps , (get('steps') rem ?STEPLIMIT)),
+					put(steps , (get('steps') rem ?STEPLIMIT)),
 					true;
 				true ->
 					true
