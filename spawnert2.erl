@@ -1,22 +1,21 @@
 
-
 -module(spawner).
 
 -compile([nowarn_unused_function , nowarn_unused_vars]).
 
--export([start/0 , process/2 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , collectDeadProcesses/0]).
+-export([start/0 , start/1 , process/2 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , findFineAvg/0 , calculateFineAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , collectDeadProcesses/0]).
 
 
 %% ---------- Definitions ----------
 
 %% # of processes
--define(LIMIT , 100).
+-define(LIMIT , 8000).
 
 %% # of Fragments
 -define(FRAGLIMIT , trunc(?LIMIT/2)).
 
 %% # of Steps
--define(STEPS , trunc(3*math:log(?LIMIT)/math:log(2))).
+-define(STEPS , trunc(2*math:log(?LIMIT)/math:log(2))).
 
 %% Timeout of receive 
 -define(TIMEOUT , 1000).
@@ -47,7 +46,7 @@ getFragIdList([E | L]) ->
 %% ---------- Selection of Neighbor ----------
 
 selectNeighbor() ->
-	MyNeighbors = get('neighborList'),
+	MyNeighbors = getMirrorChordNeighborList(get('number')) , %%get('neighborList'),
 	random:seed(now()),
 	Index = random:uniform(2*(length(MyNeighbors))),
 	case (Index rem 2) of
@@ -186,6 +185,65 @@ doAvgUpdate(Secret) ->
 			put(secret , [{avg , Avg , MyLen} | lists:keydelete(avg , 1 , get('secret'))])
 	end.
 	%%io:format("Avg | ~p | | ~p , ~p |~n",[get('name') , Avg , MyLen]).
+
+
+getFragSumLenList([]) ->
+	L = [],
+	L;
+getFragSumLenList([Frag | FragList]) ->
+	{Id , Value} = Frag,
+	[{Id , lists:sum(Value) , length(Value)} | getFragSumLenList(FragList)].
+
+
+getSeenFragSum([]) ->
+	0;
+
+getSeenFragSum([SeenFrag | SeenFragList]) ->
+	{_ , Sum , _} = SeenFrag,
+	Sum + getSeenFragSum(SeenFragList).
+
+
+getSeenFragLen([]) ->
+	0;
+
+getSeenFragLen([SeenFrag | SeenFragList]) ->
+	{_ , _ , Len} = SeenFrag,
+	Len + getSeenFragLen(SeenFragList).
+
+mergeSeenFrags(HisSeenFrags , []) ->
+	HisSeenFrags;
+
+mergeSeenFrags(HisSeenFrags , [Frag | MySeenFrags]) ->
+	case lists:member(Frag , HisSeenFrags) of
+	     	false ->
+			[Frag | mergeSeenFrags(HisSeenFrags , MySeenFrags)];
+		true ->
+			mergeSeenFrags(HisSeenFrags , MySeenFrags)
+	end.
+
+
+doFineAvgUpdate(Secret) ->
+
+	{_ , HisAvg , HisSeenFrags} = Secret,
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MySeenFrags = getFragSumLenList(get('fragment')),
+			SeenFrags = mergeSeenFrags(HisSeenFrags , MySeenFrags),
+			MyLen = getSeenFragLen(SeenFrags),
+			MyAvg = getSeenFragSum(SeenFrags) / MyLen,
+			put(secret , ([{fine_avg , MyAvg , SeenFrags} | get('secret')]));
+		true ->
+			{_ , {_ , _ , MySeenFrags}} = lists:keysearch(avg , 1 , get('secret')),
+			SeenFrags = mergeSeenFrags(HisSeenFrags , MySeenFrags),
+			MyLen = getSeenFragLen(SeenFrags),
+			MyAvg = getSeenFragSum(SeenFrags) / MyLen,
+			put(secret , ([{fine_avg , MyAvg , SeenFrags} | lists:keydelete(avg , 1 , get('secret'))]))
+	end.
+	%%io:format("Avg | ~p | | ~p |~n",[get('name') , MyAvg]).
 
 
 %% ---------- Fragment Update ----------
@@ -332,7 +390,9 @@ update([Secret | RemainingSecret]) ->
 		min ->
 		        doMinUpdate(Secret);
 		avg ->
-		        doAvgUpdate(Secret);
+			doAvgUpdate(Secret);
+		fine_avg ->
+		        doFineAvgUpdate(Secret);
 		update_frag ->
 		        doUpdateFragUpdate(Secret);
 		retrieve_frag ->
@@ -434,7 +494,8 @@ pushpull() ->
 	case (Steps == (0)) and (get('print') == (ok)) of
 	     	true ->
 			put(print , (no)),
-			io:format("| ~p | | ~p |~n",[get('name') , get('secret')]);
+			Avg = element(2 , lists:nth(1 , get('secret'))),
+			io:format("| ~p | | ~p |~n",[get('name') , Avg]);
 		_ ->
 			true
 	end,
@@ -520,6 +581,23 @@ doAvgBuild(Secret) ->
 			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, MyFragValueList)) / length(MyFragValueList),
 			MyLen = length(MyFragValueList),
 			put(secret , ([{avg , MyAvg , MyLen} | get('secret')]));
+		true ->
+			true
+	end.
+
+
+doFineAvgBuild(Secret) ->
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MyFragValueList = getFragValueList(get('fragment')),
+			SeenFrags = getFragSumLenList(get('fragment')),
+			MyLen = getSeenFragLen(SeenFrags),
+			MyAvg = getSeenFragSum(SeenFrags) / MyLen,
+			put(secret , ([{fine_avg , MyAvg , SeenFrags} | get('secret')]));
 		true ->
 			true
 	end.
@@ -614,7 +692,9 @@ build([Secret | RemainingSecret]) ->
 		min ->
 		        doMinBuild(Secret);
 		avg ->
-		        doAvgBuild(Secret);
+			doAvgBuild(Secret);
+		fine_avg ->
+		        doFineAvgBuild(Secret);
 		retrieve_frag ->
 			doRetrieveFragBuild(Secret);
 		median ->
@@ -673,6 +753,14 @@ listen() ->
 			put(secret , ([{avg , MyAvg , MyLen} | get('secret')])),
 			listen();
 
+		find_fineavg ->
+			MyFragValueList = getFragValueList(get('fragment')),
+			SeenFrags = getFragSumLenList(get('fragment')),
+			MyLen = getSeenFragLen(SeenFrags),
+			MyAvg = getSeenFragSum(SeenFrags) / MyLen,
+			put(secret , ([{fine_avg , MyAvg , SeenFrags} | get('secret')])),
+			listen();
+
 		{update_fragment , FragmentId , Value} ->
 			MyFragIdList = getFragIdList(get('fragment')),
 			IsPresent = lists:member(FragmentId , MyFragIdList),
@@ -716,7 +804,7 @@ init_dict(MyNumber, NeighborList) ->
 
 	put(number , (MyNumber)),
 	put(name , (list_to_atom( string:concat("p" , integer_to_list(MyNumber))))),
-	put(neighborList , (NeighborList)),
+	%%put(neighborList , (NeighborList)),
 	put(secret , ([])),
 	put(fragment , [{(MyNumber rem ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]} , {((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) + ?LIMIT , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) + ?LIMIT]}]),
 	put(phase , (push)),
@@ -788,7 +876,7 @@ getReverseList(MyNumber , List , I) ->
 
 getMirrorChordNeighborList(MyNumber) ->
 
-	Length = ceiling(log2(?LIMIT)),
+	Length = ceiling(log2(?LIMIT)/2),
 
 	Me = list_to_atom( string:concat( "p" , integer_to_list( MyNumber ))),
 
@@ -917,15 +1005,31 @@ collectDeadProcesses() ->
 
 start() ->
 	do_spawn(?LIMIT),
-	%%findMax(),
-	%%findAvg(),
-	%%findMin(),
-	%%updateFragment(0 , [5,0]),
-	%%retrieveFragment(trunc(?LIMIT/4)),
-	%%findMedian(),
 	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
 	io:format("").
 
+start(Operation) ->
+	do_spawn(?LIMIT),
+	case Operation of
+		max ->
+			findMax();
+		min ->
+			findMin();
+		avg ->
+			findAvg();
+		fineavg ->
+			findFineAvg();
+		up ->
+			updateFragment(0 , [10 , 20]);
+		re ->
+			retrieveFragment(0);
+		median ->
+			findMedian();
+		_ ->
+			io:format("wrong operation")
+	end,
+	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
+	io:format("").
 
 %% ---------- Various Operations ----------
 
@@ -951,6 +1055,14 @@ calculateAvg() ->
 
 findAvg() ->
 	spawn(?MODULE , calculateAvg , []).
+
+
+calculateFineAvg() ->
+	whereis(p0) ! find_fineavg,
+	exit(self() , "end of purpose").
+
+findFineAvg() ->
+	spawn(?MODULE , calculateFineAvg , []).
 
 
 calculateUpdate(FragmentId , Value) ->
