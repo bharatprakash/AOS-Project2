@@ -3,21 +3,23 @@
 
 -compile([nowarn_unused_function , nowarn_unused_vars]).
 
--export([start/0 , process/2 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , collectDeadProcesses/0]).
+-export([start/0 , start/1 , process/2 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , findFineAvg/0 , calculateFineAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , findFineMedian/0 , calculateFineMedian/0 , collectDeadProcesses/0]).
 
 
 %% ---------- Definitions ----------
 
 %% # of processes
--define(LIMIT , 1000).
+-define(LIMIT , 5).
 
 %% # of Fragments
 -define(FRAGLIMIT , trunc(?LIMIT/2)).
 
 %% # of steps after convergence
--define(CONVLIMIT , trunc(2*(math:log(?LIMIT) / math:log(2)))).
+-define(CONVLIMIT , trunc(1+(math:log(?LIMIT) / math:log(2)))).
 
 -define(AVGACCURACY , (?LIMIT / 10)).
+
+-define(STEPLIMIT , trunc((math:log(?LIMIT)/math:log(2)))).
 
 %% Timeout of receive 
 -define(TIMEOUT , 1000).
@@ -48,7 +50,7 @@ getFragIdList([E | L]) ->
 %% ---------- Selection of Neighbor ----------
 
 selectNeighbor() ->
-	MyNeighbors = get('neighborList'),
+	MyNeighbors = getMirrorChordNeighborList(get('number')), %%get('neighborList'),
 	random:seed(now()),
 	Neighbor = lists:nth(random:uniform(length(MyNeighbors)) , MyNeighbors),
 	IsAlive = is_process_alive(whereis(Neighbor)),
@@ -138,7 +140,8 @@ doMaxUpdate() ->
 					NewTermCount = TermCount + 1,
 					if
 						NewTermCount == (TermLimit) ->
-							io:format("Max | ~p | | ~p |~n" , [get('name') , MySecret]);
+							put(max , (Max)),
+							io:format("Max,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Max]);
 						true ->
 							true
 					end;
@@ -182,7 +185,8 @@ doMaxUpdate(Secret) ->
 				       		        NewTermCount = TermCount + 1,
 							if
 								NewTermCount == (TermLimit) ->
-									io:format("Max | ~p | | ~p |~n" , [get('name') , MySecret]);
+									put(max , (Max)),
+									io:format("Max,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Max]);
 								true ->
 									true
 							end;
@@ -195,8 +199,6 @@ doMaxUpdate(Secret) ->
 			end,
 			put(secret , [{max , NewTotalCount , NewTermCount , Max} | lists:keydelete(max , 1 , MySecret)])
 	end.
-
-	%%io:format("Max | ~p | | ~p |~n",[get('name') , MySecret]).
 
 
 %% ---------- Find Min of Two ----------
@@ -231,7 +233,8 @@ doMinUpdate() ->
 					NewTermCount = TermCount + 1,
 					if
 						NewTermCount == (TermLimit) ->
-							io:format("Min | ~p | | ~p |~n" , [get('name') , MySecret]);
+							put(min , (Min)),
+							io:format("Min,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Min]);
 						true ->
 							true
 					end;
@@ -273,7 +276,8 @@ doMinUpdate(Secret) ->
 				       		        NewTermCount = TermCount + 1,
 							if
 								NewTermCount == (TermLimit) ->
-									io:format("Min | ~p | | ~p |~n" , [get('name') , MySecret]);
+									put(min , (Min)),
+									io:format("Min,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Min]);
 								true ->
 									true
 							end;
@@ -320,7 +324,7 @@ doAvgUpdate() ->
 					NewTermCount = TermCount + 1,
 					if
 						NewTermCount == (TermLimit) ->
-							io:format("Avg | ~p | | ~p |~n" , [get('name') , MySecret]);
+							io:format("Avg,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Avg]);
 						true ->
 							true
 					end;
@@ -363,7 +367,7 @@ doAvgUpdate(Secret) ->
 				       		        NewTermCount = TermCount + 1,
 							if
 								NewTermCount == (TermLimit) ->
-									io:format("Avg | ~p | | ~p |~n" , [get('name') , MySecret]);
+									io:format("Avg,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Avg]);
 								true ->
 									true
 							end;
@@ -377,6 +381,115 @@ doAvgUpdate(Secret) ->
 			put(secret , [{avg , NewTotalCount , NewTermCount , Avg , MyLen} | lists:keydelete(avg , 1 , MySecret)])
 	end.
 	%%io:format("Avg | ~p | | ~p , ~p |~n",[get('name') , Avg , MyLen]).
+
+
+getFragSumLenList([]) ->
+	L = [],
+	L;
+getFragSumLenList([Frag | FragList]) ->
+	{Id , Value} = Frag,
+	[{Id , lists:sum(Value) , length(Value)} | getFragSumLenList(FragList)].
+
+
+getSeenFragSum([]) ->
+	0;
+
+getSeenFragSum([SeenFrag | SeenFragList]) ->
+	{_ , Sum , _} = SeenFrag,
+	Sum + getSeenFragSum(SeenFragList).
+
+
+getSeenFragLen([]) ->
+	0;
+
+getSeenFragLen([SeenFrag | SeenFragList]) ->
+	{_ , _ , Len} = SeenFrag,
+	Len + getSeenFragLen(SeenFragList).
+
+mergeSeenFrags(HisSeenFrags , []) ->
+	HisSeenFrags;
+
+mergeSeenFrags(HisSeenFrags , [Frag | MySeenFrags]) ->
+	case lists:member(Frag , HisSeenFrags) of
+	     	false ->
+			[Frag | mergeSeenFrags(HisSeenFrags , MySeenFrags)];
+		true ->
+			mergeSeenFrags(HisSeenFrags , MySeenFrags)
+	end.
+
+
+doFineAvgUpdate() ->
+
+	Secret = getOperation(fine_avg , get('secret')),
+
+	if
+		Secret /= (false) ->
+		       {fine_avg , TotalCount , TermCount , Avg , SeenFrags} = Secret,
+		       TermLimit = (?CONVLIMIT),
+		       if
+		       		TermCount < (TermLimit) ->
+					NewTotalCount = TotalCount + 1,
+					NewTermCount = TermCount + 1,
+					if
+						NewTermCount == (TermLimit) ->
+							io:format("FineAvg,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Avg]);
+						true ->
+							true
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , [{fine_avg , NewTotalCount , NewTermCount , Avg , SeenFrags} | lists:keydelete(fine_avg , 1 , get('secret'))]);
+		true ->
+			true
+	end.
+
+
+doFineAvgUpdate(Secret) ->
+
+	{_ , _ , _ , HisAvg , HisSeenFrags} = Secret,
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MySeenFrags = getFragSumLenList(get('fragment')),
+			SeenFrags = mergeSeenFrags(HisSeenFrags , MySeenFrags),
+			Len = getSeenFragLen(SeenFrags),
+			Avg = getSeenFragSum(SeenFrags) / Len,
+			put(secret , ([{fine_avg , 0 , 0 , Avg , SeenFrags} | get('secret')]));
+		true ->
+			{_ , {_ , _ , _ , MyAvg , MySeenFrags}} = lists:keysearch(fine_avg , 1 , get('secret')),
+			SeenFrags = mergeSeenFrags(HisSeenFrags , MySeenFrags),
+			Len = getSeenFragLen(SeenFrags),
+			Avg = getSeenFragSum(SeenFrags) / Len,
+			{_ , TotalCount , TermCount , _ , _} = getOperation(Operation , get('secret')),
+			TermLimit = (?CONVLIMIT),
+			if
+				TermCount < (TermLimit) ->
+					  NewTotalCount = TotalCount + 1,
+					  IsNegligibleChange = isNegligibleChange(Avg , MyAvg),
+					  if
+						IsNegligibleChange == (true) ->
+				       		        NewTermCount = TermCount + 1,
+							if
+								NewTermCount == (TermLimit) ->
+									    io:format("FineAvg,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Avg]);
+								true ->
+									true
+							end;
+						true ->
+							NewTermCount = 0
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , ([{fine_avg , NewTotalCount , NewTermCount , Avg , SeenFrags} | lists:keydelete(fine_avg , 1 , get('secret'))]))
+	end.
+
 
 
 %% ---------- Fragment Update ----------
@@ -394,7 +507,7 @@ doUpdateFragUpdate() ->
 					NewTermCount = TermCount + 1,
 					if
 						NewTermCount == (TermLimit) ->
-							io:format("UpF | ~p | | ~p | | ~p |~n" , [get('name') , MySecret , get('fragment')]);
+							io:format("Update,~p,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Id , Value]);
 						true ->
 							true
 					end;
@@ -425,7 +538,7 @@ doUpdateFragUpdate(Secret) ->
 					NewFragment = [{HisId , HisValue} | lists:keydelete(HisId , 1 , get('fragment'))],
 					put(fragment , (NewFragment));
 				true ->
-		      		     io:format("")
+		      		     true
 	 		end,
 			NewSecret = {update_frag , 0 , 0 , HisId , HisValue},
 			put(secret , ([Secret | MySecret]));
@@ -440,7 +553,7 @@ doUpdateFragUpdate(Secret) ->
 				       		        NewTermCount = TermCount + 1,
 							if
 								NewTermCount == (TermLimit) ->
-									io:format("UpF | ~p | | ~p | | ~p |~n" , [get('name') , MySecret , get('fragment')]);
+									    io:format("Update,~p,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Id , Value]);
 								true ->
 									true
 							end;
@@ -452,7 +565,7 @@ doUpdateFragUpdate(Secret) ->
 					NewTermCount = TermCount
 			end,
 			put(secret , [{update_frag , NewTotalCount , NewTermCount , Id , Value} | lists:keydelete(update_frag , 1 , MySecret)]),
-			io:format("")
+			true
 	end.
 	%%io:format("UpF | ~p | | ~p |~n", [get('name') , get('fragment')]).
 
@@ -473,7 +586,7 @@ doRetrieveFragUpdate() ->
 					NewTermCount = TermCount + 1,
 					if
 						NewTermCount == (TermLimit) ->
-							io:format("Ref | ~p | | ~p |~n" , [get('name') , MySecret]);
+							io:format("Retrieve,~p,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , FragId , FragValue]);
 						true ->
 							true
 					end;
@@ -485,7 +598,6 @@ doRetrieveFragUpdate() ->
 		true ->
 			true
 	end.
-	%%io:format("Ref | ~p | | ~p |~n" , [get('name') , MySecret]).
 
 
 doRetrieveFragUpdate(Secret) ->
@@ -512,12 +624,10 @@ doRetrieveFragUpdate(Secret) ->
 			if
 				IdPresent == (true) ->
 					{_ , {_ , MyFragValue}} = lists:keysearch(HisFragId , 1 , get('fragment')),
-					%%put(secret , ([{retrieve_frag , HisFragId , MyFragValue} | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))])),
 					FragValue = MyFragValue;
 				true ->
 				        if
 						length(HisFragValue) /=0 ->
-							%%put(secret , ([Secret | lists:filter(fun(X) -> X /= (IsPresent) end, get('secret'))])),
 							FragValue = HisFragValue;
 					true ->
 						{_ , _ , _ , _ , MyFragValue} = IsPresent,
@@ -534,7 +644,7 @@ doRetrieveFragUpdate(Secret) ->
 				       		        NewTermCount = TermCount + 1,
 							if
 								NewTermCount == (TermLimit) ->
-									io:format("ReF | ~p | | ~p |~n" , [get('name') , get('secret')]);
+									io:format("Retrieve,~p,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , HisFragId , FragValue]);
 								true ->
 									true
 							end;
@@ -618,6 +728,133 @@ doMedianUpdate(Secret) ->
 	io:format("Median | ~p | | ~p |~n",[get('name') , MyMedian]).
 
 
+getFineMedianSecretMatch(Secret , []) ->
+	false;
+
+getFineMedianSecretMatch(Secret , [MySecret | MySecrets]) ->
+	HisRound = element(4 , Secret),
+	MyRound = element(4 , MySecret),
+	MyOperation = element(1 , MySecret),
+	case ((MyOperation == (fine_median)) and (MyRound == (HisRound))) of
+	     	true ->
+			MySecret;
+		false ->
+			getFineMedianSecretMatch(Secret , MySecrets)
+	end.
+
+
+getLessThanCount([]) ->
+	0;
+
+getLessThanCount([Pair | Pairs]) ->
+	{_ , Count} = Pair,
+	Count + getLessThanCount(Pairs).
+
+
+getLessThan(Mid , []) ->
+	0;
+
+getLessThan(Mid , [Value | Values]) ->
+	case (Mid < Value) of
+	     	false ->
+			1 + getLessThan(Mid , Values);
+		true ->
+			getLessThan(Mid , Values)
+	end.
+
+
+getLessThanList(Mid , []) ->
+	[];
+
+getLessThanList(Mid , [Frag | Frags]) ->
+	{Id , Value} = Frag,
+	[{Id,getLessThan(Mid , Value)} | getLessThanList(Mid , Frags)].
+
+
+doFineMedianUpdate() ->
+
+	Secret = getOperation(fine_median , get('secret')),
+
+	if
+	     	Secret /= (false) ->
+			{_ , TotalCount , TermCount , MyRound , Min , Max , MyN , LessThan , LessThanList} = Secret,
+			TermLimit = (?CONVLIMIT),
+			if
+				TermCount < (TermLimit) ->
+					NewTotalCount = TotalCount + 1,
+					NewTermCount = TermCount + 1,
+					if
+						NewTermCount == (TermLimit) ->
+							io:format("Median-Round-~p,~p,~p,~p,~p,~p~n" , [MyRound , get('name') , NewTotalCount , NewTermCount , (Min+Max)/2 , LessThan]),
+							case (LessThan < (MyN/2)) of
+							     	true ->
+									self() ! {trigger_finemedian , MyRound+1 , (Max+Min)/2 , Max , MyN};
+								false ->
+									self() ! {trigger_finemedian , MyRound+1 , Min , (Max+Min)/2 , MyN}
+							end;
+						true ->
+							true
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , ([{fine_median , NewTotalCount , NewTermCount , MyRound , Min , Max , MyN , LessThan , LessThanList} | lists:keydelete(fine_median , 1 , get('secret'))]));
+		true ->
+			true
+	end,
+
+	io:format("Fine Median | ~p | | ~p |~n",[get('name') , get('secret')]).
+
+
+doFineMedianUpdate(Secret) ->
+	{_ , _ , _ , Round , HisMin , HisMax , N , HisLessThan , HisLessThanList} = Secret,
+
+	IsMatch = getFineMedianSecretMatch(Secret , get('secret')),
+
+	case IsMatch of
+
+	     	false ->
+			true;
+		_ ->
+			{_ , TotalCount , TermCount , MyRound , MyMin , MyMax , MyN , MyLessThan , MyLessThanList} = IsMatch,
+			LessThanList = mergeSeenFrags(HisLessThanList , MyLessThanList),
+			LessThan = getLessThanCount(LessThanList),
+			Min = findMin2(HisMin , MyMin),
+			Max = findMax2(HisMax , MyMax),
+			TermLimit = (?CONVLIMIT),
+			if
+				TermCount < (TermLimit) ->
+					  NewTotalCount = TotalCount + 1,
+					  IsNegligibleChange = isNegligibleChange(LessThan , MyLessThan),
+					  if
+						IsNegligibleChange == (true) ->
+				       		        NewTermCount = TermCount + 1,
+							if
+								NewTermCount == (TermLimit) ->
+									    io:format("Median-Round-~p,~p,~p,~p,~p,~p~n" , [MyRound , get('name') , NewTotalCount , NewTermCount , (Min+Max)/2 , LessThan]),
+									    case (LessThan < (MyN/2)) of
+									    	 	true ->
+												self() ! {trigger_finemedian , MyRound+1 , (Max+Min)/2 , Max , MyN};
+											false ->
+												self() ! {trigger_finemedian , MyRound+1 , Min , (Max+Min)/2 , MyN}
+									    end;
+								true ->
+									true
+							end;
+						true ->
+							NewTermCount = 0
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , ([{fine_median , NewTotalCount , NewTermCount , MyRound , Min , Max , MyN , LessThan , LessThanList} | lists:keydelete(fine_median
+ , 1 , get('secret'))]))
+	end,
+	io:format("Fine Median | ~p | | ~p |~n",[get('name') , get('secret')]).
+
+
 %% ---------- Update Driver ----------
 
 update() ->
@@ -626,6 +863,7 @@ update() ->
 	doAvgUpdate(),
 	doUpdateFragUpdate(),
 	doRetrieveFragUpdate().
+
 
 update([]) ->
 	true;
@@ -640,15 +878,19 @@ update([Secret | RemainingSecret]) ->
 		min ->
 		        doMinUpdate(Secret);
 		avg ->
-		        doAvgUpdate(Secret);
+			doAvgUpdate(Secret);
+		fine_avg ->
+		        doFineAvgUpdate(Secret);
 		update_frag ->
 		        doUpdateFragUpdate(Secret);
 		retrieve_frag ->
 		        doRetrieveFragUpdate(Secret);
 		median ->
 		        doMedianUpdate(Secret);
+		fine_median ->
+		        doFineMedianUpdate(Secret);
 		_ ->
-		        io:format("")
+		        true
 	end,
 		
 	update(RemainingSecret).
@@ -666,11 +908,11 @@ waitPushResponse() ->
 		        		update(NeighborSecret);
 				true ->
 					update(),
-					io:format("")
+					true
 			end
 
 	after ?TIMEOUT ->
-	      	io:format("")
+	      	true
 	end.
 
 
@@ -686,12 +928,12 @@ push() ->
 					Neighbor ! {push_request , Secret , Name},
 					waitPushResponse();
 				true ->
-					io:format("")
+					true
 			end;
 		true ->
-			io:format("")
+			true
 	end,
-	io:format("").
+	true.
 
 
 %% ---------- Pull ----------
@@ -706,11 +948,11 @@ waitPullComplete() ->
 		        		update(NeighborSecret);
 				true ->
 					update(),
-					io:format("")
+					true
 			end
 
 	after ?TIMEOUT ->
-	      	io:format("")
+	      	true
 
 	end.
 
@@ -729,14 +971,14 @@ waitPullResponse() ->
 		        		update(NeighborSecret);
 				true ->
 					update(),
-					io:format("")
+					true
 			end;
 
 		 no_secret ->
-			io:format("")
+			true
 
 	after ?TIMEOUT ->
-		io:format("")
+		true
 
 	end.
 
@@ -750,9 +992,9 @@ pull() ->
 			 whereis(Neighbor) ! {pull_request , Name},
 			 waitPullResponse();
 		true ->
-			 io:format("")
+			 true
 	end,
-	io:format("").
+	true.
 
 
 %% ---------- Push And Pull Alternation ----------
@@ -766,19 +1008,25 @@ pushpull() ->
 			Secret = getLiveSecrets(get('secret')),
 			if
 				length(Secret) /= (0) ->
-				push();
-			true ->
-				io:format("")
+					case (get('steps')) of
+					     	0 ->
+							push();
+						_ ->
+							true
+					end;
+					%%put(steps , (get('steps') rem ?STEPLIMIT));
+				true ->
+					true
 			end,
 			put(phase , (pull));
 		true ->
 		      	%%io:format("| ~p | in pull~n",[get('name')]),
-			timer:sleep(2000),
+			%%timer:sleep(2000),
 			pull(),
 			put(phase , (push))
 	end,
 	%%io:format("| ~p | return from pull~n",[get('name')]).
-	io:format("").
+	true.
 
 
 %% ---------- Build The Secret To Be Returned ----------
@@ -835,19 +1083,42 @@ doAvgBuild(Secret) ->
 	end.
 
 
+doFineAvgBuild(Secret) ->
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MyFragValueList = getFragValueList(get('fragment')),
+			SeenFrags = getFragSumLenList(get('fragment')),
+			MyLen = getSeenFragLen(SeenFrags),
+			MyAvg = getSeenFragSum(SeenFrags) / MyLen,
+			put(secret , ([{fine_avg , 0 , 0 , MyAvg , SeenFrags} | get('secret')]));
+		true ->
+			true
+	end.
+
+
 getMatch(_, []) ->
         false;
 
 getMatch(Secret , [MySecret | MyRemainingSecret]) ->
 
-	{HisSec , _ , _ , HisFragId , _} = Secret,
-	{MySec , _ , _ , MyFragId , _} = MySecret,
+	Operation = element(1 , MySecret),
+	if
+		Operation == (retrieve_frag) ->
+			{HisSec , _ , _ , HisFragId , _} = Secret,
+			{MySec , _ , _ , MyFragId , _} = MySecret,
 
-        case  ((HisSec == (MySec)) and (HisFragId == (MyFragId)))of
-	        true ->
-		        MySecret;
-		false ->
-		        getMatch(Secret , MyRemainingSecret)
+        	case  ((HisSec == (MySec)) and (HisFragId == (MyFragId)))of
+	        	true ->
+		    	    MySecret;
+				false ->
+		        	getMatch(Secret , MyRemainingSecret)
+			end;
+		true ->
+			getMatch(Secret , MyRemainingSecret)
 	end.
 
 
@@ -925,8 +1196,9 @@ doMedianBuild(Secret) ->
 		true ->
 			true;
 		_ ->
-			io:format("")
+			true
 	end.
+
 
 
 build([]) ->
@@ -944,16 +1216,34 @@ build([Secret | RemainingSecret]) ->
 		min ->
 		        doMinBuild(Secret);
 		avg ->
-		        doAvgBuild(Secret);
+			doAvgBuild(Secret);
+		fine_avg ->
+		        doFineAvgBuild(Secret);
 		retrieve_frag ->
 			doRetrieveFragBuild(Secret);
 		median ->
 			doMedianBuild(Secret);
+		%%finemedian ->
+		%%	doFineMedianBuild(Secret);
 		_ ->
-		        io:format("")
+		        true
 	end,
 		
 	build(RemainingSecret).
+
+
+getMedianLessSecret([]) ->
+	L = [],
+	L;
+
+getMedianLessSecret([Secret | Secrets]) ->
+	Operation = element(1 , Secret),
+	case Operation of
+	     	finemedian ->
+			getMedianLessSecret(Secrets);
+		_ ->
+			[Secret | getMedianLessSecret(Secrets)]
+	end.
 
 
 %% ---------- Listen And PushPull Alternation of Process ----------
@@ -971,7 +1261,7 @@ listen() ->
 			if
 				length(Secret) == (0) ->
 				       	whereis(Neighbor) ! no_secret,
-					io:format("");
+					true;
 				true ->
 					%%io:format("| ~p | doing pull_response~n| ~p |~n| ~p |~n~n~n",[get('name') , get('secret') , Secret]),
 					whereis(Neighbor) ! {pull_response , Secret , get('name')},
@@ -990,7 +1280,7 @@ listen() ->
 					update(NeighborSecret);
 				true ->
 					update(),
-					io:format("")
+					true
 			end,
 			listen();
 
@@ -1013,6 +1303,14 @@ listen() ->
 			put(secret , ([{avg , 0 , 0 , MyAvg , MyLen} | get('secret')])),
 			listen();
 
+		find_fineavg ->
+			MyFragValueList = getFragValueList(get('fragment')),
+			SeenFrags = getFragSumLenList(get('fragment')),
+			MyLen = getSeenFragLen(SeenFrags),
+			MyAvg = getSeenFragSum(SeenFrags) / MyLen,
+			put(secret , ([{fine_avg , 0 , 0 , MyAvg , SeenFrags} | get('secret')])),
+			listen();
+
 		{update_fragment , FragmentId , Value} ->
 			MyFragIdList = getFragIdList(get('fragment')),
 			IsPresent = lists:member(FragmentId , MyFragIdList),
@@ -1021,7 +1319,7 @@ listen() ->
 					NewFragment = [{FragmentId , Value} | lists:keydelete(FragmentId , 1 , get('fragment'))],
 					put(fragment , (NewFragment));
 				true ->
-					 io:format("")
+					 true
 			end,
 			put(secret , ([{update_frag , 0 , 0 , FragmentId , Value} | get('secret')])),
 			listen();
@@ -1042,6 +1340,37 @@ listen() ->
 		find_median ->
 			NewSecret = [ {median , findMedian(getFragValueList(get('fragment'))) , get('fragment')} | get('secret')],
 			put(secret , (NewSecret)),
+			listen();
+
+		find_finemedian ->
+			IsMax = get('max'),
+			IsMin = get('min'),
+			case ((IsMax /= (undefined)) and (IsMin /= (undefined))) of
+			     	true ->
+					%%L1 = lists:keydelete(max , 1 , get('secret')),
+					%%put('secret' , L1),
+					%%L2 = lists:keydelete(min , 1 , get('secret')),
+					%%put('secret' , (L2)),
+					self() ! {trigger_finemedian , (1) , get('min') , get('max') , ?LIMIT};
+				false ->
+					self() ! find_finemedian
+			end,
+			selectNeighbor() ! find_finemedian,
+			listen();
+
+		{trigger_finemedian , Round , Min , Max , N} ->
+			case (get('medianRound') == (Round - 1)) of
+			     	true ->
+					io:format("| ~p | karto re baba | ~p |~n",[get('name') , get('secret')]),
+					put(medianRound , (Round)),
+					Mid = (Min + Max) / 2,
+					LessThanList = getLessThanList(Mid , get('fragment')),
+					LessThanCount = getLessThanCount(LessThanList),
+					MedianLessSecret = getMedianLessSecret(get('secret')),
+					put(secret , [{fine_median , 0 , 0 , get('medianRound') , Min , Max , N , LessThanCount , LessThanList} | MedianLessSecret]);
+				false ->
+					true
+			end,
 			listen()
 
 	after ?TIMEOUT ->
@@ -1056,13 +1385,15 @@ init_dict(MyNumber, NeighborList) ->
 
 	put(number , (MyNumber)),
 	put(name , (list_to_atom( string:concat("p" , integer_to_list(MyNumber))))),
-	put(neighborList , (NeighborList)),
+	%%put(neighborList , (NeighborList)),
 	put(secret , ([])),
-	put(fragment , [{(MyNumber rem ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]} , {((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) + ?LIMIT , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) + ?LIMIT]}]),
+	put(steps , 0),
+put(medianRound , 0),
+	put(fragment , [{MyNumber , [MyNumber]}]),
+	%%put(fragment , [{(MyNumber rem ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT)]} , {((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) , [(MyNumber rem ?FRAGLIMIT) + ?LIMIT , ((MyNumber rem ?FRAGLIMIT) + ?FRAGLIMIT) + ?LIMIT]}]),
 	put(phase , (push)),
-
 	io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragment')]),
-	io:format("").
+	true.
 
 
 %% ---------- Entry Point of Process ----------
@@ -1116,6 +1447,26 @@ getList(MyNumber , List , 0) ->
 getList(MyNumber , List , I) ->
 	NewList = [list_to_atom( string:concat( "p" , integer_to_list( trunc((MyNumber + math:pow(2,I-1))) rem ?LIMIT ))) | List],
 	getList(MyNumber , NewList , I-1).
+
+
+getReverseList(MyNumber , List , 0) ->
+	List;
+
+getReverseList(MyNumber , List , I) ->
+	NewList = [list_to_atom(string:concat("p" , integer_to_list(trunc((MyNumber - math:pow(2,I-1) + ?LIMIT)) rem ?LIMIT))) | List],
+	getReverseList(MyNumber , NewList , I-1).
+
+
+getMirrorChordNeighborList(MyNumber) ->
+
+	Length = ceiling(log2(?LIMIT)/2),
+
+	Me = list_to_atom( string:concat( "p" , integer_to_list( MyNumber ))),
+
+	ChordList = getList(MyNumber , [] , Length),
+	ReverseChordList = getReverseList(MyNumber , [] , Length),
+
+	lists:umerge(lists:sort(ChordList) , lists:sort(ReverseChordList)).
 
 
 getChordNeighborList(MyNumber) ->
@@ -1222,8 +1573,9 @@ do_spawn(N) ->
     	ProcessName = list_to_atom( string:concat( "p" , integer_to_list( ?LIMIT - N ) ) ),
 	process_flag(trap_exit, true),
 	%%register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getRingNeighborList( ?LIMIT - N )])),
-	register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getChordNeighborList( ?LIMIT - N )])),
 	%%register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getMirrorRingNeighborList( ?LIMIT - N )])),
+	%%register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getChordNeighborList( ?LIMIT - N )])),
+	register(ProcessName , spawn_link(?MODULE , process , [(?LIMIT - N) , getMirrorChordNeighborList( ?LIMIT - N )])),
 	do_spawn(N-1).
 
 
@@ -1253,16 +1605,39 @@ collectDeadProcesses() ->
 %% ---------- Entry Point ----------
 
 start() ->
+	{ok, F} = file:open("out.cvs", [write]),
+	group_leader(F, self()),
 	do_spawn(?LIMIT),
-	%%findMax(),
-	%%findAvg(),
-	%%findMin(),
-	%%updateFragment(0 , [10,20]),
-	%%retrieveFragment(trunc(?LIMIT/4)),
-	%%retrieveFragment(1),
-	%%findMedian(),
 	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
-	io:format("").
+	true.
+
+start(Operation) ->
+	%%File = string:concat(atom_to_list(Operation) , ".csv"),
+	%%{ok, F} = file:open(File, [write]),
+	%%group_leader(F, self()),
+	do_spawn(?LIMIT),
+	case Operation of
+		max ->
+			findMax();
+		min ->
+			findMin();
+		avg ->
+			findAvg();
+		fineavg ->
+			findFineAvg();
+		up ->
+			updateFragment(0 , [10 , 20]);
+		re ->
+			retrieveFragment(0);
+		median ->
+			findMedian();
+		finemedian ->
+			findFineMedian();
+		_ ->
+			io:format("wrong operation")
+	end,
+	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
+	true.
 
 
 %% ---------- Various Operations ----------
@@ -1291,6 +1666,14 @@ findAvg() ->
 	spawn(?MODULE , calculateAvg , []).
 
 
+calculateFineAvg() ->
+	whereis(p0) ! find_fineavg,
+	exit(self() , "end of purpose").
+
+findFineAvg() ->
+	spawn(?MODULE , calculateFineAvg , []).
+
+
 calculateUpdate(FragmentId , Value) ->
 	whereis(p0) ! {update_fragment , FragmentId , Value},
 	exit(self() , "end of purpose").
@@ -1313,6 +1696,16 @@ calculateMedian() ->
 
 findMedian() ->
 	spawn(?MODULE , calculateMedian , []).
+
+
+calculateFineMedian() ->
+	whereis(p0) ! find_max,
+	whereis(p0) ! find_min,
+	whereis(p0) ! find_finemedian,
+	exit(self() , "end of purpose").
+
+findFineMedian() ->
+	spawn(?MODULE , calculateFineMedian , []).
 
 
 %% ---------- Unused Functions ----------
