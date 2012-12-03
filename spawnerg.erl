@@ -3,7 +3,7 @@
 
 -compile([nowarn_unused_function , nowarn_unused_vars]).
 
--export([start/2 , start/3 , process/3 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findSize/0 , calculateSize/0 , findAvg/0 , calculateAvg/0 , findFineAvg/0 , calculateFineAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , findFineMedian/0 , calculateFineMedian/0 , collectDeadProcesses/1]).
+-export([start/3 , start/4 , process/3 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findSize/0 , calculateSize/0 , findAvg/0 , calculateAvg/0 , findFineAvg/0 , calculateFineAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , findFineMedian/0 , calculateFineMedian/0 , collectDeadProcesses/1]).
 
 
 %% ---------- Definitions ----------
@@ -1191,7 +1191,7 @@ pushpull() ->
 						_ ->
 							true
 					end,
-					%%put(steps , (get('steps') rem get('steplimit'))),
+					put(steps , (get('steps') rem get('steplimit'))),
 					true;
 				true ->
 					true
@@ -1859,25 +1859,25 @@ collectDeadProcesses(Limit) ->
 	collectDeadProcesses(Limit).
 
 
-getFragList(NumLines,NumTuples) ->
-     {ok, FileDev} = file:open("./data.dat", [raw, read, read_ahead]),
+getFragList(NumLines , NumTuples , InputFile) ->
+     {ok, FileDev} = file:open(InputFile, [raw, read, read_ahead]),
 	 T = getFrags([],FileDev,NumLines,NumTuples),
 	 file:close(FileDev),
 	 T.
 
+
 getFrags(Frags, _, _,0) ->
-	%%lists:reverse(Frags);
 	Frags;
+
 getFrags(Frags, FileDev, NumLines, N) ->
 	List = do_read([],FileDev, NumLines),
-	%%io:format("~p ~n",[List]),
 	X = erlang:append_element({N}, List),
-	%%io:format("~p ~n",[X]),
 	getFrags([X|Frags], FileDev, NumLines,N - 1).
-	
+
+
 do_read(Lines, _, 0) ->
-     %%lists:reverse(Lines);
 	 Lines;
+
 do_read(Lines, FileDev, L) ->
      case file:read_line(FileDev) of
           {ok, Line} ->
@@ -1887,7 +1887,6 @@ do_read(Lines, FileDev, L) ->
 					do_read(Lines, FileDev, 0);
 				_ ->
 			   Line2 = list_to_integer(Line1),
-			   %%io:format("~p ~p~n", [Line1,length(Line1)]),
 			   do_read([Line2|Lines], FileDev, L - 1)
 			   end;
           eof ->
@@ -1908,28 +1907,35 @@ countLines(FileDev, N) ->
 
 %% ---------- Entry Point ----------
 
-start(Limit , M) ->
-	{ok, FileDev} = file:open("./data.dat", [raw, read, read_ahead]),
+start(Limit , M , InputFile) ->
+	{ok, FileDev} = file:open(InputFile, [raw, read, read_ahead]),
 	NumLines = countLines(FileDev, 0),
 	file:close(FileDev),
-	Frags = getFragList(trunc(NumLines/M),M),
+	Frags = getFragList(trunc(NumLines/M) , M , InputFile),
 
-	%%{ok, F} = file:open("out.cvs", [write]),
-	%%group_leader(F, self()),
+	%%S = string:concat(atom_to_list(), integer_to_list(Limit)),
+	OutputFile = string:concat("out.csv"),
+	{ok, F} = file:open(OutputFile, [write]),
+	group_leader(F, self()),
+
 	do_spawn(Limit , Limit , Frags),
+
 	%%register(collector , spawn(?MODULE , collectDeadProcesses , [])),
 	true.
 
-start(Operation , Limit , M) ->
-	{ok, FileDev} = file:open("./data.dat", [raw, read, read_ahead]),
+start(Operation , Limit , M , InputFile) ->
+	{ok, FileDev} = file:open(InputFile, [raw, read, read_ahead]),
 	NumLines = countLines(FileDev, 0),
 	file:close(FileDev),
-	Frags = getFragList(trunc(NumLines/M),M),
+	Frags = getFragList(trunc(NumLines/M),M , InputFile),
 
-	%%File = string:concat(atom_to_list(Operation) , ".csv"),
-	%%{ok, F} = file:open(File, [write]),
-	%%group_leader(F, self()),
+	S = string:concat(atom_to_list(Operation), integer_to_list(Limit)),
+	OutputFile = string:concat(S , ".csv"),
+	{ok, F} = file:open(OutputFile, [write]),
+	group_leader(F, self()),
+
 	do_spawn(Limit , Limit , Frags),
+
 	case Operation of
 		max ->
 			findMax();
@@ -1952,6 +1958,7 @@ start(Operation , Limit , M) ->
 		_ ->
 			io:format("wrong operation~n")
 	end,
+
 	%%register(collector , spawn(?MODULE , collectDeadProcesses , [Limit])),
 	true.
 
