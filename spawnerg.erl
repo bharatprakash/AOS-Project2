@@ -3,7 +3,7 @@
 
 -compile([nowarn_unused_function , nowarn_unused_vars]).
 
--export([start/2 , start/3 , process/3 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findAvg/0 , calculateAvg/0 , findFineAvg/0 , calculateFineAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , findFineMedian/0 , calculateFineMedian/0 , collectDeadProcesses/1]).
+-export([start/2 , start/3 , process/3 , findMax/0 , calculateMax/0 , findMin/0 , calculateMin/0 , findSize/0 , calculateSize/0 , findAvg/0 , calculateAvg/0 , findFineAvg/0 , calculateFineAvg/0 , updateFragment/2 , calculateUpdate/2 , retrieveFragment/1 , calculateRetrieve/1 , findMedian/0 , calculateMedian/0 , findFineMedian/0 , calculateFineMedian/0 , collectDeadProcesses/1]).
 
 
 %% ---------- Definitions ----------
@@ -311,6 +311,93 @@ doMinUpdate(Secret) ->
 	end.
 
 	%%io:format("Min | ~p | | ~p |~n",[get('name') , MySecret]).
+
+
+getFragSizeList([]) ->
+	L = [],
+	L;
+getFragSizeList([Frag | FragList]) ->
+	{Id , Value} = Frag,
+	[{Id , length(Value)} | getFragSizeList(FragList)].
+
+
+getSeenFragSize([]) ->
+	0;
+
+getSeenFragSize([SeenFrag | SeenFragList]) ->
+	{_ , Len} = SeenFrag,
+	Len + getSeenFragSize(SeenFragList).
+
+
+doSizeUpdate() ->
+
+	Secret = getOperation(size , get('secret')),
+
+	if
+		Secret /= (false) ->
+		       {size , TotalCount , TermCount , Size , SeenFrags} = Secret,
+		       TermLimit = (get('convlimit')),
+		       if
+		       		TermCount < (TermLimit) ->
+					NewTotalCount = TotalCount + 1,
+					NewTermCount = TermCount + 1,
+					if
+						NewTermCount == (TermLimit) ->
+							io:format("Size,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Size]);
+						true ->
+							true
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , [{size , NewTotalCount , NewTermCount , Size , SeenFrags} | lists:keydelete(size , 1 , get('secret'))]);
+		true ->
+			true
+	end.
+
+
+doSizeUpdate(Secret) ->
+
+	{_ , _ , _ , HisSize , HisSeenFrags} = Secret,
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MySeenFrags = getFragSizeList(get('fragment')),
+			SeenFrags = mergeSeenFrags(HisSeenFrags , MySeenFrags),
+			Size = getSeenFragSize(SeenFrags),
+			put(secret , ([{size , 0 , 0 , Size , SeenFrags} | get('secret')]));
+		true ->
+			{_ , {_ , _ , _ , MySize , MySeenFrags}} = lists:keysearch(size , 1 , get('secret')),
+			SeenFrags = mergeSeenFrags(HisSeenFrags , MySeenFrags),
+			Size = getSeenFragSize(SeenFrags),
+			{_ , TotalCount , TermCount , _ , _} = getOperation(Operation , get('secret')),
+			TermLimit = (get('convlimit')),
+			if
+				TermCount < (TermLimit) ->
+					  NewTotalCount = TotalCount + 1,
+					  if
+						Size == (MySize) ->
+				       		        NewTermCount = TermCount + 1,
+							if
+								NewTermCount == (TermLimit) ->
+									    io:format("Size,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Size]);
+								true ->
+									true
+							end;
+						true ->
+							NewTermCount = 0
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , ([{size , NewTotalCount , NewTermCount , Size , SeenFrags} | lists:keydelete(size , 1 , get('secret'))]))
+	end.
+	%%io:format("Size | ~p | | ~p | | ~p , ~p + ~p |~n",[get('name') , Size , SeenFrags , MySeenFrags , HisSeenFrags]).
 
 
 %% ---------- Find Avg of Two ----------
@@ -895,9 +982,12 @@ doFineMedianUpdate(Secret) ->
 update() ->
 	doMaxUpdate(),
 	doMinUpdate(),
+	doSizeUpdate(),
 	doAvgUpdate(),
+	doFineAvgUpdate(),
 	doUpdateFragUpdate(),
-	doRetrieveFragUpdate().
+	doRetrieveFragUpdate(),
+	doFineMedianUpdate().
 
 
 update([]) ->
@@ -912,6 +1002,8 @@ update([Secret | RemainingSecret]) ->
 		        doMaxUpdate(Secret);
 		min ->
 		        doMinUpdate(Secret);
+		size ->
+			doSizeUpdate(Secret);
 		avg ->
 			doAvgUpdate(Secret);
 		fine_avg ->
@@ -1101,6 +1193,22 @@ doMinBuild(Secret) ->
 	end.
 
 
+doSizeBuild(Secret) ->
+
+	Operation = element(1 , Secret),
+
+	case lists:member(Operation , getOperationList(get('secret'))) of
+
+	        false ->
+			MyFragValueList = getFragValueList(get('fragment')),
+			SeenFrags = getFragSizeList(get('fragment')),
+			MySize = getSeenFragSize(SeenFrags),
+			put(secret , ([{size , 0 , 0 , MySize , SeenFrags} | get('secret')]));
+		true ->
+			true
+	end.
+
+
 doAvgBuild(Secret) ->
 
 	Operation = element(1 , Secret),
@@ -1265,6 +1373,8 @@ build([Secret | RemainingSecret]) ->
 		        doMaxBuild(Secret);
 		min ->
 		        doMinBuild(Secret);
+		size ->
+			doSizeBuild(Secret);
 		avg ->
 			doAvgBuild(Secret);
 		fine_avg ->
@@ -1346,6 +1456,13 @@ listen() ->
 			put(secret , (NewSecret)),
 			listen();
 
+		find_size ->
+			MyFragValueList = getFragValueList(get('fragment')),
+			SeenFrags = getFragSizeList(get('fragment')),
+			MySize = getSeenFragSize(SeenFrags),
+			put(secret , ([{size , 0 , 0 , MySize , SeenFrags} | get('secret')])),
+			listen();
+
 		find_avg ->
 			MyFragValueList = getFragValueList(get('fragment')),
 			MyAvg = (lists:foldl(fun(X, Sum) -> X + Sum end, 0, MyFragValueList)) / length(MyFragValueList),
@@ -1395,13 +1512,10 @@ listen() ->
 		find_finemedian ->
 			IsMax = get('max'),
 			IsMin = get('min'),
+			IsSize = get('size'),
 			case ((IsMax /= (undefined)) and (IsMin /= (undefined))) of
 			     	true ->
-					%%L1 = lists:keydelete(max , 1 , get('secret')),
-					%%put('secret' , L1),
-					%%L2 = lists:keydelete(min , 1 , get('secret')),
-					%%put('secret' , (L2)),
-					self() ! {trigger_finemedian , (1) , get('min') , get('max') , get('limit')*2 , {get('min') , get('max') , 0}};
+					self() ! {trigger_finemedian , (1) , get('min') , get('max') , get('size') , {get('min') , get('max') , 0}};
 				false ->
 					self() ! find_finemedian
 			end,
@@ -1447,22 +1561,11 @@ init_dict(MyNumber, Limit , MyFrags) ->
 	put(number , (MyNumber)),
 	put(name , (list_to_atom( string:concat("p" , integer_to_list(MyNumber))))),
 
-%%-define(LIMIT , 1000).
 	put('limit' , (Limit)),
-
-%%-define(FRAGLIMIT , trunc(?LIMIT/2)).
 	put('fraglimit' , (trunc(Limit/2))),
-
-%%-define(CONVLIMIT , trunc((math:log(?LIMIT) / math:log(2)))).
 	put('convlimit' , (trunc(3*(math:log(Limit) / math:log(2))))),
-
-%%-define(AVGACCURACY , (?LIMIT / 100)).
 	put('avgaccuracy' , ((Limit / 10))),
-
-%%-define(STEPLIMIT , trunc((math:log(?LIMIT)/math:log(2)))).
 	put('steplimit' , (trunc((math:log(get('limit'))/math:log(2))))),
-
-%%-define(MEDIANROUNDLIMIT , trunc(2*(math:log(?LIMIT)/math:log(2)))).
 	put('medianroundlimit' , (trunc(2*(math:log(get('limit'))/math:log(2))))),
 
 	put(secret , ([])),
@@ -1476,7 +1579,7 @@ init_dict(MyNumber, Limit , MyFrags) ->
 
 	put(phase , (push)),
 
-	io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragment')]),
+	%%io:format("| ~p | | ~p | | ~p | | ~p | | ~p |~n",[get('number') , get('name') , get('neighborList') , get('secret') , get('fragment')]),
 
 	true.
 
@@ -1784,6 +1887,8 @@ start(Operation , Limit , M) ->
 			findMax();
 		min ->
 			findMin();
+		size ->
+			findSize();
 		avg ->
 			findAvg();
 		fineavg ->
@@ -1819,6 +1924,14 @@ calculateMin() ->
 
 findMin() ->
 	spawn(?MODULE , calculateMin , []).
+
+
+calculateSize() ->
+	whereis(p0) ! find_size,
+	exit(self() , "end of purpose").
+
+findSize() ->
+	spawn(?MODULE , calculateSize , []).
 
 
 calculateAvg() ->
@@ -1864,6 +1977,7 @@ findMedian() ->
 calculateFineMedian() ->
 	whereis(p0) ! find_max,
 	whereis(p0) ! find_min,
+	whereis(p0) ! find_size,
 	whereis(p0) ! find_finemedian,
 	exit(self() , "end of purpose").
 
