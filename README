@@ -19,8 +19,14 @@ Directions
 					Eg, findMax() , updateFragment(FragmentId , [10.5 , 13.65]).
 
 2. It is desirable that in a single execution, only one operation is computed.
+   Though the distinct operations can be computed in single execution
 
 3. Output will be directed to "operation + # of node .csv" in same drectory.
    Eg, max100.csv for max calculation for 100 nodes.
    The Output are of the form
-   	   	Operation , # number of total messages , # number of total messages at last value , Value
+   	   	Operation , Name of the node , # number of total messages , # number of total messages at last value , Value
+
+4. Avg and Median are implemented with two approaches
+   So for execution use two functions for each operation
+   findAvg() and findFineAvg()
+   findMedian() and findFineMedian()
