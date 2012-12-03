@@ -1,1 +1,26 @@
-This is readme
+Advanced Operating System Project
+
+Gossip Algorithm Implementation
+
+Group Members : 1. Amol Deshpande		amold1
+	  		  	2. Bharat Prakash		bhp1
+				3. Manish Chavan		manishc1
+
+Directions
+
+1. Two ways to start
+
+   	   	a. spawner:start(operation to perform , # of nodes , # of fragments , input file)
+		   		i. If input file is absent or the operation is invalid, error will be thrown and will have to start all over again.
+
+		b. spawner:start(# of nodes , # of fragments , input file)
+		   		i. If input file is absent, error will be thrown and will have to start all over again.
+				ii. Then an appropriate function can be called to do operation (refer the menu).
+					Eg, findMax() , updateFragment(FragmentId , [10.5 , 13.65]).
+
+2. It is desirable that in a single execution, only one operation is computed.
+
+3. Output will be directed to "operation + # of node .csv" in same drectory.
+   Eg, max100.csv for max calculation for 100 nodes.
+   The Output are of the form
+   	   	Operation , # number of total messages , # number of total messages at last value , Value
