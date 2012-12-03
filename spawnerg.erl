@@ -809,9 +809,37 @@ getValueList([E | L] , ValueList) ->
 	getValueList(L , NewValueList).
 
 
+doMedianUpdate() ->
+
+	Secret = getOperation(median , get('secret')),
+
+	if
+		Secret /= (false) ->
+		       {median , TotalCount , TermCount , Median , MyFragList} = Secret,
+		       TermLimit = (get('convlimit')),
+		       if
+		       		TermCount < (TermLimit) ->
+					NewTotalCount = TotalCount + 1,
+					NewTermCount = TermCount + 1,
+					if
+						NewTermCount == (TermLimit) ->
+							io:format("Median,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Median]);
+						true ->
+							true
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , [{median , NewTotalCount , NewTermCount , Median , MyFragList} | lists:keydelete(median , 1 , get('secret'))]);
+		true ->
+			true
+	end.
+
+
 doMedianUpdate(Secret) ->
 
-	{_ , _ , HisFragList} = Secret,
+	{_ , _ , _ , _ , HisFragList} = Secret,
 
 	Operation = element(1 , Secret),
 
@@ -822,16 +850,37 @@ doMedianUpdate(Secret) ->
 			MergedList = mergeFragLists(MyFragments , HisFragList),
 			MergedValueList = getValueList(MergedList , []),
 			MyMedian = findMedian(MergedValueList),
-			put(secret , ([{median , MyMedian , MergedList} | get('secret')]));
+			put(secret , ([{median , 0 , 0 , MyMedian , MergedList} | get('secret')]));
 		true ->
-			{_ , {_ , _ , MyFragList}} = lists:keysearch(median , 1 , get('secret')),
+			{_ , {_ , _ , _ , MyMedian , MyFragList}} = lists:keysearch(median , 1 , get('secret')),
 			MergedList = mergeFragLists(MyFragList , HisFragList),
 			MergedValueList = getValueList(MergedList , []),
-			MyMedian = findMedian(MergedValueList),
-			put(secret , [{median , MyMedian , MergedList} | lists:keydelete(median , 1 , get('secret'))])
-	end,
+			Median = findMedian(MergedValueList),
+			{_ , TotalCount , TermCount , _ , _} = getOperation(Operation , get('secret')),
+			TermLimit = (get('convlimit')),
+			if
+				TermCount < (TermLimit) ->
+					  NewTotalCount = TotalCount + 1,
+					  if
+						Median == (MyMedian) ->
+				       		        NewTermCount = TermCount + 1,
+							if
+								NewTermCount == (TermLimit) ->
+									    io:format("Median,~p,~p,~p,~p~n" , [get('name') , NewTotalCount , NewTermCount , Median]);
+								true ->
+									true
+							end;
+						true ->
+							NewTermCount = 0
+					end;
+				true ->
+					NewTotalCount = TotalCount,
+					NewTermCount = TermCount
+			end,
+			put(secret , [{median , NewTotalCount , NewTermCount , Median , MergedList} | lists:keydelete(median , 1 , get('secret'))])
+	end.
 
-	io:format("Median | ~p | | ~p |~n",[get('name') , MyMedian]).
+	%%io:format("Median | ~p | | ~p |~n",[get('name') , MyMedian]).
 
 
 getFineMedianSecretMatch(Secret , []) ->
@@ -987,6 +1036,7 @@ update() ->
 	doFineAvgUpdate(),
 	doUpdateFragUpdate(),
 	doRetrieveFragUpdate(),
+	doMedianUpdate(),
 	doFineMedianUpdate().
 
 
@@ -1336,7 +1386,7 @@ doMedianBuild(Secret) ->
 
 	        false ->
 			MyMedian = findMedian(getFragValueList(get('fragment'))),
-			put(secret , ( [ {median , MyMedian , get('fragment')} | get('secret') ] ) );
+			put(secret , ( [ {median , 0 , 0 , MyMedian , get('fragment')} | get('secret') ] ) );
 		true ->
 			true;
 		_ ->
@@ -1383,8 +1433,6 @@ build([Secret | RemainingSecret]) ->
 			doRetrieveFragBuild(Secret);
 		median ->
 			doMedianBuild(Secret);
-		%%fine_median ->
-			%%doFineMedianBuild(Secret);
 		_ ->
 		        true
 	end,
@@ -1505,7 +1553,7 @@ listen() ->
 			listen();
 
 		find_median ->
-			NewSecret = [ {median , findMedian(getFragValueList(get('fragment'))) , get('fragment')} | get('secret')],
+			NewSecret = [ {median , 0 , 0 , findMedian(getFragValueList(get('fragment'))) , get('fragment')} | get('secret')],
 			put(secret , (NewSecret)),
 			listen();
 
